@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - SKEPT_FRAMES=${SKEPT_FRAMES:-6}
+    volumes:
+      - ./backend:/app   # live reload during dev
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
