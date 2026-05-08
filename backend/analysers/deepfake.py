@@ -1,10 +1,10 @@
 """
 Skept — Frame-Level Deepfake Analyser
-Extracts frames via ffmpeg, sends each to HuggingFace Inference API
-(prithivMLmods/Deep-Fake-Detector-v2-Model), aggregates scores.
+Extracts frames via ffmpeg, sends each to HuggingFace Inference API,
+aggregates scores into a verdict signal.
 
-Swap the HF_MODEL constant to switch to Effort or any other detector
-once hosted — the rest of the pipeline is unchanged.
+Model: prithivMLmods/deepfake-detector-model-v1 (SigLIP-based, 94.4% accuracy)
+Labels: "Fake" / "Real"
 """
 
 import asyncio
@@ -15,21 +15,16 @@ from pathlib import Path
 
 import httpx
 
-# HuggingFace model — swap this string to change analyser
-HF_MODEL = "prithivMLmods/Deep-Fake-Detector-Model-v2"
+HF_MODEL = "prithivMLmods/deepfake-detector-model-v1"
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-
-# Frames to sample per clip (cheap-first: start low, raise for paid tier)
-FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "6"))
+FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "3"))
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 
 async def run_deepfake(video_path: str) -> dict:
-    """Extract frames and score each via the HF Inference API."""
     if not HF_TOKEN:
         return _no_token_result()
 
-    # Extract frames
     frame_paths = await asyncio.to_thread(_extract_frames, video_path, FRAMES_TO_SAMPLE)
 
     if not frame_paths:
@@ -41,12 +36,11 @@ async def run_deepfake(video_path: str) -> dict:
             "summary": "Frame extraction failed.",
         }
 
-    # Score frames concurrently (rate-limit: HF free tier is ~3 req/s)
-    sem = asyncio.Semaphore(3)
+    sem = asyncio.Semaphore(2)
 
-    async def score_one(frame_path: str) -> dict | None:
+    async def score_one(fp):
         async with sem:
-            return await _score_frame(frame_path)
+            return await _score_frame(fp)
 
     results = await asyncio.gather(*[score_one(fp) for fp in frame_paths])
     valid = [r for r in results if r is not None]
@@ -60,12 +54,9 @@ async def run_deepfake(video_path: str) -> dict:
             "summary": "Deepfake analyser returned no results.",
         }
 
-    # Aggregate: mean fake probability across sampled frames
     fake_probs = [r["fake_prob"] for r in valid]
     mean_fake = round(sum(fake_probs) / len(fake_probs), 3)
     max_fake = round(max(fake_probs), 3)
-
-    # High-confidence frames (fake_prob > 0.7)
     high_conf = [r for r in valid if r["fake_prob"] > 0.7]
 
     signals = [
@@ -117,10 +108,7 @@ async def run_deepfake(video_path: str) -> dict:
 
 
 def _extract_frames(video_path: str, n: int) -> list[str]:
-    """Use ffmpeg to extract n evenly-spaced frames as JPEG files."""
     tmpdir = tempfile.mkdtemp(prefix="skept_frames_")
-
-    # Get duration first
     dur_result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
          "-of", "csv=p=0", video_path],
@@ -129,13 +117,11 @@ def _extract_frames(video_path: str, n: int) -> list[str]:
     try:
         duration = float(dur_result.stdout.strip())
     except Exception:
-        duration = 30.0  # fallback
+        duration = 30.0
 
-    # Sample at even intervals (skip first and last 5% to avoid title frames)
     margin = duration * 0.05
     usable = max(duration - 2 * margin, 1.0)
     interval = usable / n
-
     frames = []
     for i in range(n):
         t = margin + i * interval
@@ -147,14 +133,12 @@ def _extract_frames(video_path: str, n: int) -> list[str]:
         )
         if out.exists() and out.stat().st_size > 0:
             frames.append(str(out))
-
     return frames
 
 
 async def _score_frame(frame_path: str) -> dict | None:
-    """Call HF Inference API for a single frame."""
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=45) as client:
             with open(frame_path, "rb") as f:
                 data = f.read()
             resp = await client.post(
@@ -166,11 +150,9 @@ async def _score_frame(frame_path: str) -> dict | None:
                 },
             )
             if resp.status_code == 503:
-                # Model is loading — wait and retry once
-                await asyncio.sleep(10)
+                await asyncio.sleep(15)
                 resp = await client.post(
-                    HF_API_URL,
-                    content=data,
+                    HF_API_URL, content=data,
                     headers={
                         "Authorization": f"Bearer {HF_TOKEN}",
                         "Content-Type": "image/jpeg",
@@ -178,13 +160,13 @@ async def _score_frame(frame_path: str) -> dict | None:
                 )
             resp.raise_for_status()
             predictions = resp.json()
-            # Response: [{"label": "Realism", "score": 0.92}, {"label": "Deepfake", "score": 0.08}]
+            # Model labels: "Fake" / "Real"
             fake_prob = next(
-                (p["score"] for p in predictions if p["label"] == "Deepfake"), 0.5
+                (p["score"] for p in predictions
+                 if p["label"].lower() in ("fake", "deepfake")), 0.5
             )
             return {"frame": frame_path, "fake_prob": round(fake_prob, 4)}
     except Exception as e:
-        # Log but don't crash — partial results are fine
         print(f"Frame scoring error ({frame_path}): {e}")
         return None
 
@@ -193,15 +175,7 @@ def _no_token_result() -> dict:
     return {
         "status": "skipped",
         "score": 0.5,
-        "signals": [
-            {
-                "label": "HF_TOKEN not configured",
-                "value": "Set HF_TOKEN environment variable to enable GPU analysis",
-                "weight": "high",
-                "suspicious": False,
-            }
-        ],
-        "summary": "Frame-level deepfake analysis skipped — no HuggingFace API token configured. "
-                   "Set HF_TOKEN in your .env file.",
+        "signals": [{"label": "HF_TOKEN not configured", "value": "Set HF_TOKEN to enable GPU analysis", "weight": "high", "suspicious": False}],
+        "summary": "Frame-level deepfake analysis skipped — no HuggingFace API token configured.",
         "model": HF_MODEL,
     }
