@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 
 # HuggingFace model — swap this string to change analyser
-HF_MODEL = "prithivMLmods/Deep-Fake-Detector-v2-Model"
+HF_MODEL = "prithivMLmods/Deep-Fake-Detector-Model-v2"
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 # Frames to sample per clip (cheap-first: start low, raise for paid tier)
