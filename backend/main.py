@@ -121,8 +121,7 @@ async def ingest(url: str | None, workdir: str) -> str:
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4",
             "--no-playlist", "--quiet",
-            "--extractor-args", "youtube:player_client=android",
-        ]
+            ]
 
         cookies = os.environ.get("YOUTUBE_COOKIES")
         cookie_file = None
