@@ -114,35 +114,16 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
 async def ingest(url: str | None, workdir: str) -> str:
     if url:
         out = Path(workdir) / "video.mp4"
-
-        cmd = [
+        proc = await asyncio.create_subprocess_exec(
             "yt-dlp", url,
             "-o", str(out),
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4",
             "--no-playlist", "--quiet",
-            ]
-
-        cookies = os.environ.get("YOUTUBE_COOKIES")
-        cookie_file = None
-        if cookies:
-            cookie_file = tempfile.NamedTemporaryFile(
-                mode='w', suffix='.txt', delete=False
-            )
-            cookie_file.write(cookies)
-            cookie_file.flush()
-            cmd += ["--cookies", cookie_file.name]
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
-
-        if cookie_file:
-            os.unlink(cookie_file.name)
-
         if proc.returncode != 0:
             raise RuntimeError(f"yt-dlp failed: {stderr.decode()}")
         if not out.exists():
