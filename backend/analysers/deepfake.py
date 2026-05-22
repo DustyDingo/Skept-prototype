@@ -1,10 +1,10 @@
 """
-Skept — Frame-Level Deepfake Analyser
-Extracts frames via ffmpeg, sends each to HuggingFace Inference API,
+Skept — Frame-Level Deepfake Analyser (Replicate)
+Extracts frames via ffmpeg, sends each to Replicate AI image detection API,
 aggregates scores into a verdict signal.
 
-Model: prithivMLmods/deepfake-detector-model-v1 (SigLIP-based, 94.4% accuracy)
-Labels: "Fake" / "Real"
+Model: capcheck/ai-image-detection (ViT-based, AI vs Real classification)
+Replaces: prithivMLmods/deepfake-detector-model-v1 (HF free tier — GPU blocked)
 """
 
 import asyncio
@@ -13,16 +13,15 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import httpx
+import replicate
 
-HF_MODEL = "prithivMLmods/deepfake-detector-model-v1"
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+REPLICATE_MODEL = "capcheck/ai-image-detection"
 FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "3"))
-HF_TOKEN = os.getenv("HF_TOKEN", "")
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
 
 
 async def run_deepfake(video_path: str) -> dict:
-    if not HF_TOKEN:
+    if not REPLICATE_API_TOKEN:
         return _no_token_result()
 
     frame_paths = await asyncio.to_thread(_extract_frames, video_path, FRAMES_TO_SAMPLE)
@@ -102,12 +101,13 @@ async def run_deepfake(video_path: str) -> dict:
         "score": mean_fake,
         "signals": signals,
         "summary": summary,
-        "model": HF_MODEL,
+        "model": REPLICATE_MODEL,
         "frames_sampled": len(valid),
     }
 
 
 def _extract_frames(video_path: str, n: int) -> list[str]:
+    """Unchanged — ffmpeg frame extraction, evenly spaced with 5% margin."""
     tmpdir = tempfile.mkdtemp(prefix="skept_frames_")
     dur_result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
@@ -126,7 +126,7 @@ def _extract_frames(video_path: str, n: int) -> list[str]:
     for i in range(n):
         t = margin + i * interval
         out = Path(tmpdir) / f"frame_{i:03d}.jpg"
-        res = subprocess.run(
+        subprocess.run(
             ["ffmpeg", "-ss", str(t), "-i", video_path,
              "-frames:v", "1", "-q:v", "2", str(out), "-y", "-loglevel", "error"],
             capture_output=True, timeout=15
@@ -137,35 +137,16 @@ def _extract_frames(video_path: str, n: int) -> list[str]:
 
 
 async def _score_frame(frame_path: str) -> dict | None:
+    """Score a single frame via Replicate. Wraps sync client in thread."""
     try:
-        async with httpx.AsyncClient(timeout=45) as client:
-            with open(frame_path, "rb") as f:
-                data = f.read()
-            resp = await client.post(
-                HF_API_URL,
-                content=data,
-                headers={
-                    "Authorization": f"Bearer {HF_TOKEN}",
-                    "Content-Type": "image/jpeg",
-                },
+        with open(frame_path, "rb") as f:
+            output = await asyncio.to_thread(
+                replicate.run,
+                REPLICATE_MODEL,
+                input={"image": f},
             )
-            if resp.status_code == 503:
-                await asyncio.sleep(15)
-                resp = await client.post(
-                    HF_API_URL, content=data,
-                    headers={
-                        "Authorization": f"Bearer {HF_TOKEN}",
-                        "Content-Type": "image/jpeg",
-                    },
-                )
-            resp.raise_for_status()
-            predictions = resp.json()
-            # Model labels: "Fake" / "Real"
-            fake_prob = next(
-                (p["score"] for p in predictions
-                 if p["label"].lower() in ("fake", "deepfake")), 0.5
-            )
-            return {"frame": frame_path, "fake_prob": round(fake_prob, 4)}
+        ai_prob = output.get("ai_probability", 0.5)
+        return {"frame": frame_path, "fake_prob": round(float(ai_prob), 4)}
     except Exception as e:
         print(f"Frame scoring error ({frame_path}): {e}")
         return None
@@ -175,7 +156,12 @@ def _no_token_result() -> dict:
     return {
         "status": "skipped",
         "score": 0.5,
-        "signals": [{"label": "HF_TOKEN not configured", "value": "Set HF_TOKEN to enable GPU analysis", "weight": "high", "suspicious": False}],
-        "summary": "Frame-level deepfake analysis skipped — no HuggingFace API token configured.",
-        "model": HF_MODEL,
+        "signals": [{
+            "label": "REPLICATE_API_TOKEN not configured",
+            "value": "Set REPLICATE_API_TOKEN in Railway environment variables",
+            "weight": "high",
+            "suspicious": False,
+        }],
+        "summary": "Frame-level analysis skipped — no Replicate API token configured.",
+        "model": REPLICATE_MODEL,
     }
