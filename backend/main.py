@@ -102,11 +102,11 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["analysers"]["source_reputation"] = {"status": "running"}
         if url:
             meta_result, rep_result = await asyncio.gather(
-                asyncio.to_thread(run_metadata, video_path),
+                asyncio.to_thread(run_metadata, video_path, url or ""),
                 asyncio.to_thread(run_reputation, url),
             )
         else:
-            meta_result = await asyncio.to_thread(run_metadata, video_path)
+            meta_result = await asyncio.to_thread(run_metadata, video_path, "")
             rep_result = {
                 "analyser": "source_reputation", "status": "skipped",
                 "skip_reason": "file_upload_no_url", "score": 0.5,
