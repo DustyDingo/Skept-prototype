@@ -1,0 +1,301 @@
+"""
+Skept — C2PA / Provenance Analyser
+Checks for a cryptographically signed C2PA manifest embedded in the video file.
+
+C2PA (Coalition for Content Provenance and Authenticity) is an open standard
+backed by Adobe, Microsoft, Google, OpenAI, Sony, Nikon, and major platforms.
+When present, a valid manifest is the highest-trust signal in the pipeline.
+
+Outcome states:
+  no_manifest       Most platform-downloaded clips — neutral (0.5). Absence is
+                    common and not itself suspicious; it means we cannot verify.
+  valid             Manifest present and cryptographically intact. Score depends
+                    on the declared content type (AI-generated content declared
+                    in a valid manifest is honest disclosure, not a red flag for
+                    the manifest itself — but is surfaced prominently).
+  tampered          Manifest present but hash validation failed — content was
+                    modified after signing. High suspicion score.
+  invalid_signature Manifest present but signature cannot be verified.
+  error             File could not be read or library error.
+
+C2PA digital source types surfaced:
+  trainedAlgorithmicMedia → content declared as AI-generated
+  digitalCapture          → camera-captured
+  compositeCapture        → mixed/composite
+  algorithmicMedia        → algorithmically generated (not AI-trained)
+"""
+
+import json
+import logging
+import mimetypes
+from pathlib import Path
+from typing import Optional
+
+import c2pa
+
+logger = logging.getLogger(__name__)
+
+# C2PA digital source type URIs (IPTC newscodes)
+_DST_BASE = "http://cv.iptc.org/newscodes/digitalsourcetype/"
+_AI_GENERATED_TYPES = {
+    f"{_DST_BASE}trainedAlgorithmicMedia",
+    f"{_DST_BASE}algorithmicMedia",
+    f"{_DST_BASE}compositeWithTrainedAlgorithmicMedia",
+}
+_CAMERA_TYPES = {
+    f"{_DST_BASE}digitalCapture",
+    f"{_DST_BASE}negativeFilm",
+    f"{_DST_BASE}positiveFilm",
+}
+
+# C2PA actions that indicate post-capture editing
+_EDIT_ACTIONS = {
+    "c2pa.edited",
+    "c2pa.color_adjustments",
+    "c2pa.cropped",
+    "c2pa.drawing",
+    "c2pa.filtered",
+    "c2pa.opened",
+    "c2pa.orientation",
+    "c2pa.placed",
+    "c2pa.removed",
+    "c2pa.repackaged",
+    "c2pa.resized",
+    "c2pa.unknown",
+}
+
+
+def run_c2pa(video_path: str) -> dict:
+    """
+    Check for a C2PA manifest in the downloaded/uploaded video file.
+
+    Args:
+        video_path: Local path to the video file.
+
+    Returns:
+        Structured evidence dict matching Skept analyser contract.
+    """
+    result = _base_result()
+
+    try:
+        reader = c2pa.Reader.try_create(video_path)
+
+        if reader is None:
+            # No manifest — common for platform-downloaded clips
+            result["status"]        = "complete"
+            result["outcome"]       = "no_manifest"
+            result["score"]         = 0.5
+            result["confidence"]    = 0.3   # low — absence is uninformative
+            result["summary"]       = (
+                "No C2PA provenance manifest found. This is expected for most "
+                "platform-downloaded clips. Absence is not itself suspicious."
+            )
+            result["signal_cards"]  = [_card(
+                "C2PA manifest", "Not present", False,
+                "Most platform-encoded clips have no embedded provenance manifest."
+            )]
+            return result
+
+        # Manifest found — read it
+        manifest    = reader.get_active_manifest() or {}
+        val_state   = reader.get_validation_state()
+        val_results = reader.get_validation_results() or {}
+        reader.close()
+
+        # Extract key fields
+        claim_gen   = _extract_claim_generator(manifest)
+        dst         = _extract_digital_source_type(manifest)
+        actions     = _extract_actions(manifest)
+        issuer      = _extract_issuer(manifest)
+        ai_declared = dst in _AI_GENERATED_TYPES if dst else False
+
+        result["manifest_present"]  = True
+        result["validation_state"]  = val_state
+        result["claim_generator"]   = claim_gen
+        result["digital_source_type"] = dst
+        result["issuer"]            = issuer
+        result["actions"]           = actions
+
+        # Score based on validation state
+        if val_state == "VALID":
+            # Valid manifest — high trust, low suspicion for the manifest itself
+            # AI-declared content in a valid manifest is honest disclosure
+            score      = 0.10
+            confidence = 0.85
+            outcome    = "valid"
+            summary    = _build_valid_summary(issuer, claim_gen, dst, actions, ai_declared)
+        elif val_state in ("INVALID", None) and val_results:
+            # Manifest present but failed validation — content modified after signing
+            score      = 0.90
+            confidence = 0.90
+            outcome    = "tampered"
+            summary    = (
+                "C2PA manifest found but hash validation failed. Content appears "
+                "to have been modified after the manifest was signed. "
+                "This is a strong indicator of manipulation."
+            )
+        else:
+            # Manifest present but signature unverifiable
+            score      = 0.60
+            confidence = 0.50
+            outcome    = "invalid_signature"
+            summary    = (
+                "C2PA manifest found but the signature could not be verified. "
+                "The provenance chain cannot be confirmed."
+            )
+
+        result["status"]     = "complete"
+        result["outcome"]    = outcome
+        result["score"]      = round(score, 3)
+        result["confidence"] = confidence
+        result["summary"]    = summary
+        result["signal_cards"] = _build_signal_cards(
+            outcome, val_state, issuer, claim_gen, dst, actions, ai_declared
+        )
+
+    except Exception as exc:
+        logger.error(f"[c2pa] Error: {exc}", exc_info=True)
+        result["status"]  = "error"
+        result["error"]   = str(exc)
+        result["score"]   = 0.5
+        result["summary"] = "C2PA check encountered an error."
+
+    return result
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _base_result() -> dict:
+    return {
+        "analyser":            "c2pa",
+        "status":              "pending",
+        "outcome":             None,
+        "score":               None,
+        "confidence":          0.0,
+        "manifest_present":    False,
+        "validation_state":    None,
+        "claim_generator":     None,
+        "digital_source_type": None,
+        "issuer":              None,
+        "actions":             [],
+        "signal_cards":        [],
+        "summary":             None,
+        "error":               None,
+    }
+
+
+def _extract_claim_generator(manifest: dict) -> Optional[str]:
+    return manifest.get("claim_generator") or manifest.get("claimGenerator")
+
+
+def _extract_digital_source_type(manifest: dict) -> Optional[str]:
+    """Look for digitalSourceType in assertions."""
+    for assertion in manifest.get("assertions", []):
+        label = assertion.get("label", "")
+        data  = assertion.get("data", {})
+        # Creative work assertion
+        if "CreativeWork" in label or "schema-org" in label:
+            dst = (data.get("digitalSourceType")
+                   or data.get("digital_source_type"))
+            if dst:
+                return dst
+        # Direct field
+        if "digitalSourceType" in data:
+            return data["digitalSourceType"]
+    return None
+
+
+def _extract_actions(manifest: dict) -> list:
+    """Extract list of C2PA action strings."""
+    for assertion in manifest.get("assertions", []):
+        if assertion.get("label") == "c2pa.actions":
+            return [
+                a.get("action", "")
+                for a in assertion.get("data", {}).get("actions", [])
+                if a.get("action")
+            ]
+    return []
+
+
+def _extract_issuer(manifest: dict) -> Optional[str]:
+    sig = manifest.get("signature_info") or manifest.get("signatureInfo") or {}
+    return sig.get("issuer") or sig.get("cert_serial_number")
+
+
+def _build_valid_summary(issuer, claim_gen, dst, actions, ai_declared) -> str:
+    parts = []
+    if issuer:
+        parts.append(f"Signed by {issuer}")
+    elif claim_gen:
+        parts.append(f"Manifest created by {claim_gen}")
+
+    if ai_declared:
+        parts.append(
+            "content is declared as AI-generated within the manifest "
+            "(honest disclosure by the creator)"
+        )
+    elif dst and any(t in dst for t in ("digitalCapture", "Film")):
+        parts.append("content declared as camera-captured")
+
+    if actions:
+        edit_list = [a.replace("c2pa.", "") for a in actions[:3]]
+        parts.append(f"recorded actions: {', '.join(edit_list)}")
+
+    if not parts:
+        return "Valid C2PA manifest found. Provenance chain is intact."
+
+    sentence = "; ".join(parts)
+    return "Valid C2PA manifest. " + sentence[0].upper() + sentence[1:] + "."
+
+
+def _card(label: str, value, suspicious: bool, detail: str = "") -> dict:
+    return {
+        "label":     label,
+        "value":     value,
+        "suspicious": suspicious,
+        "detail":    detail,
+    }
+
+
+def _build_signal_cards(
+    outcome, val_state, issuer, claim_gen, dst, actions, ai_declared
+) -> list:
+    cards = []
+
+    # Manifest presence
+    cards.append(_card("C2PA manifest", "Present", False))
+
+    # Validation
+    if outcome == "valid":
+        cards.append(_card("Validation", "Valid ✓", False,
+                           "Cryptographic hashes match — content not modified after signing."))
+    elif outcome == "tampered":
+        cards.append(_card("Validation", "Failed ✗", True,
+                           "Hash mismatch — content was modified after the manifest was signed."))
+    else:
+        cards.append(_card("Validation", "Unverifiable", True,
+                           "Signature could not be verified."))
+
+    # Signer
+    if issuer:
+        cards.append(_card("Signer / Issuer", issuer, False))
+    elif claim_gen:
+        cards.append(_card("Claim generator", claim_gen, False))
+
+    # Digital source type
+    if dst:
+        short_dst = dst.split("/")[-1] if "/" in dst else dst
+        cards.append(_card(
+            "Digital source type", short_dst, ai_declared,
+            "Declared as AI-generated content." if ai_declared else ""
+        ))
+
+    # Actions
+    if actions:
+        cards.append(_card(
+            "Recorded actions",
+            ", ".join(a.replace("c2pa.", "") for a in actions[:5]),
+            False
+        ))
+
+    return cards
