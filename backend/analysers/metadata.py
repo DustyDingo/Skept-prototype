@@ -169,20 +169,21 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
 
     suspicious_count = sum(1 for s in signals if s.get("suspicious"))
 
-    if platform_source:
-        if suspicious_count == 0:
-            summary = "Metadata consistent with an authentic clip. Camera provenance absent — expected after platform re-encoding."
-        elif suspicious_count == 1:
-            summary = "One metadata signal is unusual. Camera provenance absent — expected after platform re-encoding."
-        else:
-            summary = "Some metadata anomalies detected. Camera provenance absent — expected after platform re-encoding."
+    # Summary text is score-driven, not suspicious_count-driven.
+    # "Consistent with authentic" should only appear when the score is
+    # genuinely low, not when it is ambiguous or elevated.
+    platform_note = (
+        " Camera provenance absent — expected after platform re-encoding."
+        if platform_source else ""
+    )
+    if score == 0.0:
+        summary = f"No metadata anomalies detected.{platform_note}"
+    elif score < 0.15:
+        summary = f"Minor metadata signals noted — insufficient on their own to indicate manipulation.{platform_note}"
+    elif score < 0.35:
+        summary = f"Some metadata anomalies detected. This file may be multiple encoding hops from source.{platform_note}"
     else:
-        if suspicious_count == 0:
-            summary = "Metadata consistent with an authentic clip. Note: platform re-encoding strips most container provenance."
-        elif suspicious_count <= 2:
-            summary = "Some metadata signals are absent or unusual. This file is likely multiple encoding hops from source."
-        else:
-            summary = "Multiple metadata anomalies detected. Container provenance is absent or inconsistent."
+        summary = f"Multiple metadata anomalies detected. Container provenance is absent or inconsistent.{platform_note}"
 
     return {
         "status":  "complete",
