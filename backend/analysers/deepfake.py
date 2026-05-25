@@ -145,7 +145,19 @@ async def _score_frame(frame_path: str) -> dict | None:
                 REPLICATE_MODEL,
                 input={"image": f},
             )
-        ai_prob = output.get("ai_probability", 0.5)
+        # capcheck/ai-image-detection returns a list:
+        # [{"label": "Fake", "score": 0.95}, {"label": "Real", "score": 0.05}]
+        if isinstance(output, list):
+            fake_item = next(
+                (item for item in output if item.get("label", "").lower() == "fake"),
+                None,
+            )
+            ai_prob = fake_item["score"] if fake_item else 0.5
+        elif isinstance(output, dict):
+            # Fallback in case the API schema changes
+            ai_prob = output.get("ai_probability", output.get("score", 0.5))
+        else:
+            ai_prob = 0.5
         return {"frame": frame_path, "fake_prob": round(float(ai_prob), 4)}
     except Exception as e:
         print(f"Frame scoring error ({frame_path}): {e}")
