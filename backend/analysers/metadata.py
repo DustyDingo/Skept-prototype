@@ -17,6 +17,13 @@ import subprocess
 from pathlib import Path
 
 
+# Base suspicion score applied to platform-sourced clips.
+# Even when all individual signals are clean, a platform re-encoded clip
+# has had its original provenance chain broken — we cannot confirm where
+# the file came from. This reflects unknown provenance, not confirmed
+# authenticity. Raw device files (no platform source) start at 0.0.
+_PLATFORM_BASE_SCORE = 0.25
+
 # Platforms known to strip camera/encoder metadata during re-encoding.
 # Absence of camera metadata on clips from these sources is expected.
 _PLATFORM_DOMAINS = {
@@ -160,30 +167,48 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
     signals.append(container_signal)
 
     # ── Composite score ──────────────────────────────────────────────────────
-    raw_score = min(sum(score_components), 1.0)
+    # Platform-sourced clips start at a base score reflecting broken
+    # provenance chain — original metadata has been stripped so we cannot
+    # confirm where the file came from. Additional signal anomalies add
+    # on top of this base. Raw device files start at 0.0.
+    base = _PLATFORM_BASE_SCORE if platform_source else 0.0
+    raw_score = min(base + sum(score_components), 1.0)
 
     # Cap at 0.5 — metadata forensics cannot confirm manipulation,
-    # only raise suspicion. Platform-sourced clips will naturally score
-    # lower here; that's correct, not a calibration error.
+    # only raise suspicion.
     score = round(min(raw_score, 0.5), 3)
 
     suspicious_count = sum(1 for s in signals if s.get("suspicious"))
 
-    # Summary text is score-driven, not suspicious_count-driven.
-    # "Consistent with authentic" should only appear when the score is
-    # genuinely low, not when it is ambiguous or elevated.
-    platform_note = (
-        " Camera provenance absent — expected after platform re-encoding."
-        if platform_source else ""
-    )
-    if score == 0.0:
-        summary = f"No metadata anomalies detected.{platform_note}"
-    elif score < 0.15:
-        summary = f"Minor metadata signals noted — insufficient on their own to indicate manipulation.{platform_note}"
-    elif score < 0.35:
-        summary = f"Some metadata anomalies detected. This file may be multiple encoding hops from source.{platform_note}"
+    # Summary text is score-driven.
+    # Platform clips use different language — the base score reflects
+    # broken provenance chain, not detected manipulation.
+    if platform_source:
+        if score <= _PLATFORM_BASE_SCORE:
+            # Only the base score, no additional signal anomalies
+            summary = (
+                "Original provenance not verifiable — platform re-encoding has removed "
+                "container metadata. No additional anomalies detected."
+            )
+        elif score < 0.40:
+            summary = (
+                "Original provenance not verifiable — platform re-encoding has removed "
+                "container metadata. Some additional signals are unusual."
+            )
+        else:
+            summary = (
+                "Original provenance not verifiable — platform re-encoding has removed "
+                "container metadata. Multiple additional anomalies detected."
+            )
     else:
-        summary = f"Multiple metadata anomalies detected. Container provenance is absent or inconsistent.{platform_note}"
+        if score == 0.0:
+            summary = "No metadata anomalies detected. Container provenance is intact."
+        elif score < 0.15:
+            summary = "Minor metadata signals noted — insufficient on their own to indicate manipulation."
+        elif score < 0.35:
+            summary = "Some metadata anomalies detected. This file may be multiple encoding hops from source."
+        else:
+            summary = "Multiple metadata anomalies detected. Container provenance is absent or inconsistent."
 
     return {
         "status":  "complete",
