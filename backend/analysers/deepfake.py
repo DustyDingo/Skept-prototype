@@ -24,7 +24,7 @@ from pathlib import Path
 
 import replicate
 
-REPLICATE_MODEL = "scamai/deepfake-faceswap-detection"
+REPLICATE_MODEL = "scamai/deepfake-faceswap-detection:163f897bd0e920d375e4e67299bfc4c5eeeb8beb243d5ea9b309d1c299f562e7"
 FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "3"))
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
 
