@@ -17,16 +17,17 @@ Verdict bands:
 WEIGHTS = {
     "metadata":          0.15,
     "source_reputation": 0.20,
+    "c2pa":              0.25,
     "deepfake":          0.40,
-    # c2pa: 0.25 — reserved, not yet in prototype
 }
 
 
-def fuse(metadata: dict, source_reputation: dict, deepfake: dict) -> dict:
+def fuse(metadata: dict, source_reputation: dict, c2pa_result: dict, deepfake: dict) -> dict:
     """Combine analyser scores into a final verdict."""
     analyser_map = {
         "metadata":          metadata,
         "source_reputation": source_reputation,
+        "c2pa":              c2pa_result,
         "deepfake":          deepfake,
     }
 
