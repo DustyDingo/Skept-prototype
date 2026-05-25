@@ -1,10 +1,19 @@
 """
 Skept — Frame-Level Deepfake Analyser (Replicate)
-Extracts frames via ffmpeg, sends each to Replicate AI image detection API,
+Extracts frames via ffmpeg, sends each to Replicate faceswap detection API,
 aggregates scores into a verdict signal.
 
-Model: capcheck/ai-image-detection (ViT-based, AI vs Real classification)
-Replaces: prithivMLmods/deepfake-detector-model-v1 (HF free tier — GPU blocked)
+Model: scamai/deepfake-faceswap-detection
+       Detects face-replacement deepfakes specifically. Does not cover purely
+       AI-generated imagery — use as a faceswap signal pillar, not a general
+       synthetic-content detector.
+
+TEMPORARY STAND-IN: Replace with prithivMLmods/deepfake-detector-model-v1
+       (via HuggingFace paid tier) once HF billing is active. At that point,
+       retain scamai as an additive 8th signal pillar alongside the general
+       synthetic content detector.
+
+Replaces: capcheck/ai-image-detection (404 — not actually hosted on Replicate)
 """
 
 import asyncio
@@ -15,7 +24,7 @@ from pathlib import Path
 
 import replicate
 
-REPLICATE_MODEL = "capcheck/ai-image-detection"
+REPLICATE_MODEL = "scamai/deepfake-faceswap-detection"
 FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "3"))
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
 
@@ -66,19 +75,19 @@ async def run_deepfake(video_path: str) -> dict:
             "suspicious": False,
         },
         {
-            "label": "Mean synthetic probability",
+            "label": "Mean faceswap probability",
             "value": f"{mean_fake:.0%}",
             "weight": "high",
             "suspicious": mean_fake > 0.5,
         },
         {
-            "label": "Peak synthetic probability",
+            "label": "Peak faceswap probability",
             "value": f"{max_fake:.0%}",
             "weight": "high",
             "suspicious": max_fake > 0.7,
         },
         {
-            "label": "High-confidence synthetic frames",
+            "label": "High-confidence faceswap frames",
             "value": f"{len(high_conf)} of {len(valid)}",
             "weight": "high",
             "suspicious": len(high_conf) > 0,
@@ -86,13 +95,13 @@ async def run_deepfake(video_path: str) -> dict:
     ]
 
     if mean_fake < 0.3:
-        summary = f"Frame analysis consistent with authentic content ({mean_fake:.0%} mean synthetic probability)."
+        summary = f"Frame analysis found no faceswap indicators ({mean_fake:.0%} mean probability)."
     elif mean_fake < 0.6:
-        summary = f"Frame analysis inconclusive — {mean_fake:.0%} mean synthetic probability across {len(valid)} sampled frames."
+        summary = f"Frame analysis inconclusive — {mean_fake:.0%} mean faceswap probability across {len(valid)} sampled frames."
     else:
         summary = (
-            f"Frame analysis flags synthetic characteristics — {mean_fake:.0%} mean and "
-            f"{max_fake:.0%} peak synthetic probability. "
+            f"Frame analysis flags faceswap characteristics — {mean_fake:.0%} mean and "
+            f"{max_fake:.0%} peak probability. "
             f"{len(high_conf)} frame(s) above high-confidence threshold."
         )
 
@@ -137,7 +146,14 @@ def _extract_frames(video_path: str, n: int) -> list[str]:
 
 
 async def _score_frame(frame_path: str) -> dict | None:
-    """Score a single frame via Replicate. Wraps sync client in thread."""
+    """
+    Score a single frame via Replicate scamai/deepfake-faceswap-detection.
+
+    Output schema is logged on first call for verification — the model returns
+    a confidence score for faceswap likelihood. Defensive parsing handles both
+    dict and list responses so we can confirm the schema from Railway logs and
+    adjust if needed without another deploy cycle.
+    """
     try:
         with open(frame_path, "rb") as f:
             output = await asyncio.to_thread(
@@ -145,23 +161,64 @@ async def _score_frame(frame_path: str) -> dict | None:
                 REPLICATE_MODEL,
                 input={"image": f},
             )
-        # capcheck/ai-image-detection returns a list:
-        # [{"label": "Fake", "score": 0.95}, {"label": "Real", "score": 0.05}]
-        if isinstance(output, list):
-            fake_item = next(
-                (item for item in output if item.get("label", "").lower() == "fake"),
-                None,
-            )
-            ai_prob = fake_item["score"] if fake_item else 0.5
-        elif isinstance(output, dict):
-            # Fallback in case the API schema changes
-            ai_prob = output.get("ai_probability", output.get("score", 0.5))
-        else:
-            ai_prob = 0.5
-        return {"frame": frame_path, "fake_prob": round(float(ai_prob), 4)}
+
+        # Log raw output once so we can confirm schema from Railway logs
+        print(f"[deepfake] raw output type={type(output).__name__} value={output!r}")
+
+        fake_prob = _parse_fake_prob(output)
+        return {"frame": frame_path, "fake_prob": round(float(fake_prob), 4)}
+
     except Exception as e:
         print(f"Frame scoring error ({frame_path}): {e}")
         return None
+
+
+def _parse_fake_prob(output) -> float:
+    """
+    Defensive parser for Replicate model output.
+    Handles the most common return shapes until schema is confirmed from logs.
+    """
+    if output is None:
+        return 0.5
+
+    # Dict: {"score": 0.95} or {"fake": 0.95} or {"probability": 0.95}
+    if isinstance(output, dict):
+        for key in ("score", "fake", "fake_probability", "probability", "confidence"):
+            if key in output:
+                return float(output[key])
+        # Fallback: take the first numeric value
+        for v in output.values():
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+
+    # List: [{"label": "fake", "score": 0.95}, ...] or [0.95, 0.05]
+    if isinstance(output, list):
+        if output and isinstance(output[0], dict):
+            fake_item = next(
+                (item for item in output
+                 if str(item.get("label", "")).lower() in ("fake", "deepfake", "faceswap")),
+                None,
+            )
+            if fake_item:
+                return float(fake_item.get("score", fake_item.get("probability", 0.5)))
+            # No matching label — take first item's score
+            first = output[0]
+            for key in ("score", "probability", "confidence"):
+                if key in first:
+                    return float(first[key])
+        elif output and isinstance(output[0], (int, float)):
+            # Raw probability list — assume index 0 is fake probability
+            return float(output[0])
+
+    # Scalar
+    try:
+        return float(output)
+    except (TypeError, ValueError):
+        pass
+
+    return 0.5
 
 
 def _no_token_result() -> dict:
