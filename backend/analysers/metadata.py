@@ -22,7 +22,7 @@ from pathlib import Path
 # has had its original provenance chain broken — we cannot confirm where
 # the file came from. This reflects unknown provenance, not confirmed
 # authenticity. Raw device files (no platform source) start at 0.0.
-_PLATFORM_BASE_SCORE = 0.25
+_PLATFORM_BASE_SCORE = 0.45
 
 # Platforms known to strip camera/encoder metadata during re-encoding.
 # Absence of camera metadata on clips from these sources is expected.
