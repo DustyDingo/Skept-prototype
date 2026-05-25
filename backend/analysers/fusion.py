@@ -2,10 +2,11 @@
 Skept — Fusion & Scoring Service
 Weighted ensemble combining analyser outputs into a final verdict band.
 
-Weights reflect the brief's cheap-first architecture:
-  - C2PA (not yet in prototype): weight=0.40 — highest trust when present
-  - Deepfake frame analysis:     weight=0.45 — primary detection signal
-  - Metadata forensics:          weight=0.15 — supporting context, cap at 0.5
+Weights:
+  - C2PA (not yet in prototype): 0.25 — highest trust when present
+  - Deepfake frame analysis:     0.40 — primary detection signal
+  - Source reputation:           0.20 — durable behavioural signal
+  - Metadata forensics:          0.15 — supporting context, capped at 0.5
 
 Verdict bands:
   Green  0.0 – 0.30   Likely authentic
@@ -14,24 +15,32 @@ Verdict bands:
 """
 
 WEIGHTS = {
-    "metadata": 0.15,
-    "deepfake": 0.45,
-    # c2pa: 0.40 — reserved, not yet in prototype
+    "metadata":          0.15,
+    "source_reputation": 0.20,
+    "deepfake":          0.40,
+    # c2pa: 0.25 — reserved, not yet in prototype
 }
 
 
-def fuse(metadata: dict, deepfake: dict) -> dict:
+def fuse(metadata: dict, source_reputation: dict, deepfake: dict) -> dict:
     """Combine analyser scores into a final verdict."""
+    analyser_map = {
+        "metadata":          metadata,
+        "source_reputation": source_reputation,
+        "deepfake":          deepfake,
+    }
 
-    scores = {}
-    total_weight = 0.0
-    weighted_sum = 0.0
+    scores        = {}
+    total_weight  = 0.0
+    weighted_sum  = 0.0
 
     for key, weight in WEIGHTS.items():
-        analyser = {"metadata": metadata, "deepfake": deepfake}[key]
+        analyser = analyser_map[key]
         if analyser.get("status") in ("complete", "skipped"):
-            score = analyser.get("score", 0.5)
-            scores[key] = score
+            score = analyser.get("score")
+            if score is None:
+                continue
+            scores[key]   = score
             weighted_sum += score * weight
             total_weight += weight
 
@@ -41,23 +50,23 @@ def fuse(metadata: dict, deepfake: dict) -> dict:
     final_score = round(weighted_sum / total_weight, 3)
 
     if final_score < 0.30:
-        band = "green"
-        label = "Likely authentic"
+        band        = "green"
+        label       = "Likely authentic"
         description = (
             "Skept found no significant indicators of manipulation in this clip. "
             "Results reflect the submitted copy only — re-encoding may have degraded forensic signals."
         )
     elif final_score < 0.60:
-        band = "amber"
-        label = "Inconclusive"
+        band        = "amber"
+        label       = "Inconclusive"
         description = (
             "Skept detected some signals worth noting but cannot confirm manipulation. "
             "Platform re-encoding typically degrades artifact-level signals — "
             "a clean result here does not guarantee authenticity."
         )
     else:
-        band = "red"
-        label = "Likely manipulated"
+        band        = "red"
+        label       = "Likely manipulated"
         description = (
             "Skept detected multiple signals consistent with AI manipulation or synthetic generation. "
             "This verdict is based on the submitted copy and should be treated as investigative, "
@@ -65,12 +74,12 @@ def fuse(metadata: dict, deepfake: dict) -> dict:
         )
 
     return {
-        "band": band,
-        "label": label,
-        "score": final_score,
-        "description": description,
+        "band":            band,
+        "label":           label,
+        "score":           final_score,
+        "description":     description,
         "analyser_scores": scores,
-        "confidence": _confidence_label(total_weight, scores),
+        "confidence":      _confidence_label(total_weight, scores),
         "disclaimer": (
             "Skept verdicts are probabilistic observations, not factual determinations. "
             "Platform compression reduces forensic signal quality. Always apply editorial judgement."
@@ -79,9 +88,9 @@ def fuse(metadata: dict, deepfake: dict) -> dict:
 
 
 def _confidence_label(total_weight: float, scores: dict) -> str:
-    if total_weight >= 0.6 and len(scores) >= 2:
+    if total_weight >= 0.60 and len(scores) >= 2:
         return "moderate"
-    elif total_weight >= 0.4:
+    elif total_weight >= 0.40:
         return "low"
     else:
         return "very low"
@@ -89,12 +98,12 @@ def _confidence_label(total_weight: float, scores: dict) -> str:
 
 def _error_verdict(reason: str) -> dict:
     return {
-        "band": "amber",
-        "label": "Inconclusive",
-        "score": 0.5,
-        "description": f"Analysis could not be completed: {reason}",
+        "band":            "amber",
+        "label":           "Inconclusive",
+        "score":           0.5,
+        "description":     f"Analysis could not be completed: {reason}",
         "analyser_scores": {},
-        "confidence": "none",
+        "confidence":      "none",
         "disclaimer": (
             "Skept verdicts are probabilistic observations, not factual determinations."
         ),
