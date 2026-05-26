@@ -13,6 +13,8 @@ Signals computed (Phase 1):
   recent_7d_pct           share of visible posts from the last 7 days
   follower_count          where surfaced by platform
   follower_per_post       follower-to-post ratio
+  username_digit_ratio    fraction of username characters that are digits
+  username_has_words      whether username contains a recognisable word (≥3 letters)
 
 Deferred to Phase 2:
   GAN profile picture detection
@@ -38,11 +40,12 @@ logger = logging.getLogger(__name__)
 
 # ── Signal weights for composite score ──────────────────────────────────────
 SIGNAL_WEIGHTS = {
-    "account_age":          0.30,
-    "cadence_variance":     0.25,
-    "post_rate":            0.20,
-    "recent_concentration": 0.15,
-    "follower_post_ratio":  0.10,
+    "account_age":          0.28,
+    "cadence_variance":     0.23,
+    "post_rate":            0.19,
+    "recent_concentration": 0.14,
+    "follower_post_ratio":  0.08,
+    "username_pattern":     0.08,
 }
 
 # ── Platform URL patterns ────────────────────────────────────────────────────
@@ -50,6 +53,7 @@ SIGNAL_WEIGHTS = {
 _PLATFORM_PATTERNS = [
     (r"tiktok\.com/@([\w.]+)",              "tiktok",    "https://www.tiktok.com/@{}"),
     (r"(?:twitter|x)\.com/([\w]+)/status/", "twitter",   "https://twitter.com/{}"),
+    (r"bsky\.app/profile/([\w.]+)",         "bluesky",   "https://bsky.app/profile/{}"),
     (r"youtu(?:be\.com|\.be)",              "youtube",   None),
     (r"instagram\.com/p/",                  "instagram", None),
     (r"facebook\.com/",                     "facebook",  None),
@@ -90,14 +94,14 @@ def run_reputation(url: str) -> dict:
         if not account_url:
             return _skip(result, "account_url_not_resolvable")
 
-        posts = _fetch_account_posts(account_url, platform)
+        entries, account_meta = _fetch_account_data(account_url, platform)
 
-        if posts is None:
+        if entries is None:
             return _skip(result, "account_fetch_blocked")
-        if len(posts) == 0:
+        if len(entries) == 0:
             return _skip(result, "no_posts_accessible")
 
-        signals = _compute_signals(posts)
+        signals = _compute_signals(entries, account_meta, handle)
         result["signals"] = signals
 
         score, flags, confidence = _score(signals)
@@ -200,11 +204,12 @@ def _resolve_via_video_meta(url: str, platform: str) -> tuple:
 
 # ── 2. Account post history fetch ────────────────────────────────────────────
 
-def _fetch_account_posts(account_url: str, platform: str) -> Optional[list]:
+def _fetch_account_data(account_url: str, platform: str) -> tuple[Optional[list], dict]:
     """
     Fetch recent post metadata using yt-dlp playlist/channel extraction.
     extract_flat=True → metadata only, no video downloads.
-    Returns list of post dicts, or None if blocked/unavailable.
+    Returns (entries, account_meta) where account_meta carries channel-level
+    fields (e.g. channel_follower_count), or (None, {}) if blocked/unavailable.
     """
     if platform == "youtube":
         account_url = account_url.rstrip("/") + "/videos"
@@ -224,51 +229,63 @@ def _fetch_account_posts(account_url: str, platform: str) -> Optional[list]:
             info = ydl.extract_info(account_url, download=False)
 
         if info is None:
-            return None
+            return None, {}
         if info.get("_type") == "video":
-            return [info]
+            return [info], info
 
-        entries = info.get("entries") or []
-        return [e for e in entries if e is not None]
+        entries      = [e for e in (info.get("entries") or []) if e is not None]
+        account_meta = {k: v for k, v in info.items() if k != "entries"}
+        return entries, account_meta
 
     except Exception as exc:
         logger.warning(f"[source_reputation] Account fetch failed ({account_url}): {exc}")
-        return None
+        return None, {}
 
 
 # ── 3. Signal computation ────────────────────────────────────────────────────
 
-def _compute_signals(posts: list) -> dict:
+def _compute_signals(posts: list, account_meta: dict, handle: Optional[str] = None) -> dict:
     now     = datetime.now(timezone.utc)
     signals = {}
 
     dates = [d for d in (_parse_date(p) for p in posts) if d]
     dates.sort()
 
-    if not dates:
-        return signals
+    if dates:
+        signals["oldest_post_age_days"] = (now - dates[0]).days
+        signals["newest_post_age_days"] = (now - dates[-1]).days
+        signals["account_age_days_min"] = signals["oldest_post_age_days"]
+        signals["post_count_fetched"]   = len(posts)
 
-    signals["oldest_post_age_days"] = (now - dates[0]).days
-    signals["newest_post_age_days"] = (now - dates[-1]).days
-    signals["account_age_days_min"] = signals["oldest_post_age_days"]
-    signals["post_count_fetched"]   = len(posts)
+        window_days = max(signals["account_age_days_min"], 1)
+        signals["cadence_posts_per_day"] = round(len(posts) / window_days, 3)
 
-    window_days = max(signals["account_age_days_min"], 1)
-    signals["cadence_posts_per_day"] = round(len(posts) / window_days, 3)
+        if len(dates) >= 3:
+            gaps     = [(dates[i+1] - dates[i]).total_seconds() / 3600 for i in range(len(dates) - 1)]
+            mean_gap = statistics.mean(gaps)
+            if mean_gap > 0:
+                signals["cadence_cv"]             = round(statistics.stdev(gaps) / mean_gap, 3)
+                signals["cadence_mean_gap_hours"] = round(mean_gap, 2)
+            else:
+                signals["cadence_cv"] = 0.0
 
-    if len(dates) >= 3:
-        gaps     = [(dates[i+1] - dates[i]).total_seconds() / 3600 for i in range(len(dates) - 1)]
-        mean_gap = statistics.mean(gaps)
-        if mean_gap > 0:
-            signals["cadence_cv"]              = round(statistics.stdev(gaps) / mean_gap, 3)
-            signals["cadence_mean_gap_hours"]  = round(mean_gap, 2)
-        else:
-            signals["cadence_cv"] = 0.0
+        week_ago = now.timestamp() - (7 * 86400)
+        recent   = [d for d in dates if d.timestamp() > week_ago]
+        signals["recent_7d_count"] = len(recent)
+        signals["recent_7d_pct"]   = round(len(recent) / len(dates), 3)
 
-    week_ago = now.timestamp() - (7 * 86400)
-    recent   = [d for d in dates if d.timestamp() > week_ago]
-    signals["recent_7d_count"] = len(recent)
-    signals["recent_7d_pct"]   = round(len(recent) / len(dates), 3)
+    follower_count = account_meta.get("channel_follower_count")
+    if follower_count is not None:
+        signals["follower_count"] = follower_count
+        if len(posts) > 0:
+            signals["follower_per_post"] = round(follower_count / len(posts), 1)
+
+    if handle:
+        clean       = handle.lstrip("@")
+        digit_ratio = sum(c.isdigit() for c in clean) / max(len(clean), 1)
+        has_words   = bool(re.search(r"[a-zA-Z]{3,}", clean))
+        signals["username_digit_ratio"] = round(digit_ratio, 3)
+        signals["username_has_words"]   = has_words
 
     return signals
 
@@ -352,6 +369,17 @@ def _score(signals: dict) -> tuple:
             sub_scores["follower_post_ratio"] = 0.30
         else:
             sub_scores["follower_post_ratio"] = 0.05
+
+    digit_ratio = signals.get("username_digit_ratio")
+    has_words   = signals.get("username_has_words")
+    if digit_ratio is not None:
+        data_points += 1
+        if digit_ratio > 0.5 and not has_words:
+            sub_scores["username_pattern"] = 0.80; flags.append("numeric_heavy_username")
+        elif digit_ratio > 0.3:
+            sub_scores["username_pattern"] = 0.45
+        else:
+            sub_scores["username_pattern"] = 0.10
 
     if not sub_scores:
         return None, [], 0.0
@@ -452,6 +480,24 @@ def _build_signal_cards(signals: dict, flags: list) -> list:
             "value":     f"{int(recent_pct * 100)}%",
             "suspicious": recent_pct > 0.85,
             "weight":    "medium",
+        })
+
+    follower_count = signals.get("follower_count")
+    if follower_count is not None:
+        cards.append({
+            "label":     "Followers",
+            "value":     f"{follower_count:,}",
+            "suspicious": False,
+            "weight":    "info",
+        })
+
+    digit_ratio = signals.get("username_digit_ratio")
+    if digit_ratio is not None:
+        cards.append({
+            "label":     "Username digit ratio",
+            "value":     f"{int(digit_ratio * 100)}%",
+            "suspicious": digit_ratio > 0.5 and not signals.get("username_has_words"),
+            "weight":    "low",
         })
 
     if flags:
