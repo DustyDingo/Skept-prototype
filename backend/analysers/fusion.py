@@ -3,10 +3,11 @@ Skept — Fusion & Scoring Service
 Weighted ensemble combining analyser outputs into a final verdict band.
 
 Weights:
-  - C2PA (not yet in prototype): 0.25 — highest trust when present
   - Deepfake frame analysis:     0.40 — primary detection signal
-  - Source reputation:           0.20 — durable behavioural signal
-  - Metadata forensics:          0.15 — supporting context, capped at 0.5
+  - C2PA (not yet in prototype): 0.22 — highest trust when present
+  - Source reputation:           0.15 — durable behavioural signal
+  - Source behaviour:            0.15 — account bio / cross-platform identity
+  - Metadata forensics:          0.08 — supporting context, capped at 0.5
 
 Verdict bands:
   Green  0.0 – 0.30   Likely authentic
@@ -15,18 +16,26 @@ Verdict bands:
 """
 
 WEIGHTS = {
-    "metadata":          0.15,
-    "source_reputation": 0.20,
-    "c2pa":              0.25,
+    "metadata":          0.08,
+    "source_reputation": 0.15,
+    "source_behaviour":  0.15,
+    "c2pa":              0.22,
     "deepfake":          0.40,
 }
 
 
-def fuse(metadata: dict, source_reputation: dict, c2pa_result: dict, deepfake: dict) -> dict:
+def fuse(
+    metadata: dict,
+    source_reputation: dict,
+    source_behaviour: dict,
+    c2pa_result: dict,
+    deepfake: dict,
+) -> dict:
     """Combine analyser scores into a final verdict."""
     analyser_map = {
         "metadata":          metadata,
         "source_reputation": source_reputation,
+        "source_behaviour":  source_behaviour,
         "c2pa":              c2pa_result,
         "deepfake":          deepfake,
     }
