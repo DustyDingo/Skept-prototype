@@ -1,26 +1,20 @@
 """
 source_reputation.py  —  Skept prototype  —  Stage 1 analyser
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Platform-agnostic account behavioural signal analyser.
+Platform-agnostic account identity signal analyser.
 
-Entry point: run_reputation(url) — matches the run_* convention
-used by the other Skept analysers.
-
-Signals computed (Phase 1):
+Domain (exclusive):
   account_age_days_min    lower bound on account age (oldest visible post)
   cadence_posts_per_day   average posting rate across observation window
-  cadence_cv              coefficient of variation of inter-post gaps
   recent_7d_pct           share of visible posts from the last 7 days
   follower_count          where surfaced by platform
   follower_per_post       follower-to-post ratio
   username_digit_ratio    fraction of username characters that are digits
   username_has_words      whether username contains a recognisable word (≥3 letters)
 
-Deferred to Phase 2:
-  GAN profile picture detection
-  Content-category classification
-  Engagement ratio analysis
-  Cross-platform identity stitching
+Cadence timing variance (CV) and burst-pattern analysis belong to
+source_behaviour.py, which shares the same yt-dlp fetch but owns the
+cadence shape and bio identity domain.
 
 Language discipline (Project Brief §4.7):
   Evidence text uses descriptive behavioural language only.
@@ -30,7 +24,6 @@ Language discipline (Project Brief §4.7):
 
 import re
 import logging
-import statistics
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -38,18 +31,14 @@ import yt_dlp
 
 logger = logging.getLogger(__name__)
 
-# ── Signal weights for composite score ──────────────────────────────────────
 SIGNAL_WEIGHTS = {
-    "account_age":          0.28,
-    "cadence_variance":     0.23,
-    "post_rate":            0.19,
-    "recent_concentration": 0.14,
-    "follower_post_ratio":  0.08,
-    "username_pattern":     0.08,
+    "account_age":          0.35,
+    "post_rate":            0.25,
+    "recent_concentration": 0.18,
+    "follower_post_ratio":  0.12,
+    "username_pattern":     0.10,
 }
 
-# ── Platform URL patterns ────────────────────────────────────────────────────
-# (regex, platform_name, account_url_template | None)
 _PLATFORM_PATTERNS = [
     (r"tiktok\.com/@([\w.]+)",              "tiktok",    "https://www.tiktok.com/@{}"),
     (r"(?:twitter|x)\.com/([\w]+)/status/", "twitter",   "https://twitter.com/{}"),
@@ -71,10 +60,6 @@ def run_reputation(url: str) -> dict:
     """
     Run the source reputation analyser on a submitted clip URL.
 
-    Called from main.py Stage 1 alongside run_metadata().
-    URL-only (no pre-fetched yt-dlp info dict in the current prototype
-    since ingest() uses subprocess yt-dlp rather than the Python API).
-
     Returns a dict matching the Skept analyser output contract:
       status        "complete" | "skipped" | "error"
       score         float 0.0–1.0 (0=authentic, 1=suspicious) | None
@@ -82,7 +67,7 @@ def run_reputation(url: str) -> dict:
       flags         list[str]
       signals       dict  (used by fusion layer)
       signal_cards  list  (used by frontend evidence card renderer)
-      summary       str   (matches metadata analyser field name)
+      summary       str
     """
     result = _base_result()
 
@@ -145,7 +130,7 @@ def _base_result() -> dict:
 def _skip(result: dict, reason: str) -> dict:
     result["status"]      = "skipped"
     result["skip_reason"] = reason
-    result["score"]       = 0.5   # neutral — don't penalise a skipped analyser
+    result["score"]       = 0.5
     result["summary"]     = f"Source reputation analysis unavailable ({reason.replace('_', ' ')})."
     logger.info(f"[source_reputation] Skipped — {reason}")
     return result
@@ -168,9 +153,6 @@ def _extract_account_info(url: str) -> tuple:
                 account_url = url_template.format(m.group(1))
             break
 
-    # For platforms where we can't derive the account URL from the video URL
-    # alone (YouTube, Instagram), try a lightweight yt-dlp extraction to get
-    # uploader_url from the video's own metadata.
     if platform in ("youtube", "instagram", "facebook") and not account_url:
         account_url, handle = _resolve_via_video_meta(url, platform)
 
@@ -178,10 +160,6 @@ def _extract_account_info(url: str) -> tuple:
 
 
 def _resolve_via_video_meta(url: str, platform: str) -> tuple:
-    """
-    For platforms where account URL isn't in the video URL, do a quick
-    yt-dlp extract on the video itself (no download) to get uploader_url.
-    """
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -205,12 +183,6 @@ def _resolve_via_video_meta(url: str, platform: str) -> tuple:
 # ── 2. Account post history fetch ────────────────────────────────────────────
 
 def _fetch_account_data(account_url: str, platform: str) -> tuple[Optional[list], dict]:
-    """
-    Fetch recent post metadata using yt-dlp playlist/channel extraction.
-    extract_flat=True → metadata only, no video downloads.
-    Returns (entries, account_meta) where account_meta carries channel-level
-    fields (e.g. channel_follower_count), or (None, {}) if blocked/unavailable.
-    """
     if platform == "youtube":
         account_url = account_url.rstrip("/") + "/videos"
 
@@ -259,15 +231,6 @@ def _compute_signals(posts: list, account_meta: dict, handle: Optional[str] = No
 
         window_days = max(signals["account_age_days_min"], 1)
         signals["cadence_posts_per_day"] = round(len(posts) / window_days, 3)
-
-        if len(dates) >= 3:
-            gaps     = [(dates[i+1] - dates[i]).total_seconds() / 3600 for i in range(len(dates) - 1)]
-            mean_gap = statistics.mean(gaps)
-            if mean_gap > 0:
-                signals["cadence_cv"]             = round(statistics.stdev(gaps) / mean_gap, 3)
-                signals["cadence_mean_gap_hours"] = round(mean_gap, 2)
-            else:
-                signals["cadence_cv"] = 0.0
 
         week_ago = now.timestamp() - (7 * 86400)
         recent   = [d for d in dates if d.timestamp() > week_ago]
@@ -326,18 +289,6 @@ def _score(signals: dict) -> tuple:
         else:
             sub_scores["account_age"] = 0.05
 
-    cv = signals.get("cadence_cv")
-    if cv is not None:
-        data_points += 1
-        if cv > 2.0:
-            sub_scores["cadence_variance"] = 0.92; flags.append("high_cadence_irregularity")
-        elif cv > 1.2:
-            sub_scores["cadence_variance"] = 0.65; flags.append("elevated_cadence_irregularity")
-        elif cv > 0.7:
-            sub_scores["cadence_variance"] = 0.35
-        else:
-            sub_scores["cadence_variance"] = 0.08
-
     rate = signals.get("cadence_posts_per_day")
     if rate is not None:
         data_points += 1
@@ -394,7 +345,6 @@ def _score(signals: dict) -> tuple:
 # ── 5. Output formatting ─────────────────────────────────────────────────────
 
 def _build_summary(signals: dict, flags: list, handle: Optional[str], platform: str) -> str:
-    """Plain-language summary for the evidence card. Behavioural language only."""
     parts = []
     name  = f"@{handle.lstrip('@')}" if handle else "this account"
     p_str = f" on {platform}" if platform not in ("unknown", None) else ""
@@ -407,13 +357,6 @@ def _build_summary(signals: dict, flags: list, handle: Optional[str], platform: 
     rate  = signals.get("cadence_posts_per_day")
     if count and rate:
         parts.append(f"posted {count} videos at an average of {rate:.1f} per day")
-
-    cv = signals.get("cadence_cv")
-    if cv is not None:
-        if cv > 1.2:
-            parts.append(f"with irregular posting timing (variance score {cv:.2f})")
-        else:
-            parts.append(f"with consistent posting timing (variance score {cv:.2f})")
 
     recent_pct   = signals.get("recent_7d_pct")
     recent_count = signals.get("recent_7d_count")
@@ -431,10 +374,6 @@ def _build_summary(signals: dict, flags: list, handle: Optional[str], platform: 
 
 
 def _build_signal_cards(signals: dict, flags: list) -> list:
-    """
-    Convert signals dict to the list format expected by the frontend
-    renderSignals() function (same schema as metadata.py signals list).
-    """
     cards = []
 
     age = signals.get("account_age_days_min")
@@ -464,15 +403,6 @@ def _build_signal_cards(signals: dict, flags: list) -> list:
             "weight":    "medium",
         })
 
-    cv = signals.get("cadence_cv")
-    if cv is not None:
-        cards.append({
-            "label":     "Timing variance (CV)",
-            "value":     f"{cv:.2f}",
-            "suspicious": cv > 1.2,
-            "weight":    "medium",
-        })
-
     recent_pct = signals.get("recent_7d_pct")
     if recent_pct is not None:
         cards.append({
@@ -489,6 +419,15 @@ def _build_signal_cards(signals: dict, flags: list) -> list:
             "value":     f"{follower_count:,}",
             "suspicious": False,
             "weight":    "info",
+        })
+
+    fpp = signals.get("follower_per_post")
+    if fpp is not None:
+        cards.append({
+            "label":     "Followers per post",
+            "value":     f"{fpp:.0f}",
+            "suspicious": fpp < 5,
+            "weight":    "medium",
         })
 
     digit_ratio = signals.get("username_digit_ratio")
