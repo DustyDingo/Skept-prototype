@@ -57,6 +57,7 @@ App served at `http://localhost:8000`. No separate frontend build step.
 |---|---|---|
 | `HF_TOKEN` | Optional | HuggingFace API token — Stage 2 (deepfake) silently skipped if missing |
 | `SKEPT_FRAMES` | Optional | Frames sampled per video (default: 6) |
+| `REPLICATE_API_TOKEN` | Optional | Audio, face, and frame pillars inactive if not set |
 
 Copy `.env.example` to `.env` before running.
 
@@ -109,12 +110,13 @@ survive. This makes source reputation the most durable detection layer.
 
 ---
 
-## Signal Architecture (7 pillars across 2 stage groups)
+## Signal Architecture (8 pillars across 2 stage groups)
 
 ### Stage Group A — Artifact-level forensics
 1. Container/metadata forensics (ffprobe)
 2. Pixel/model analysis (deepfake detection)
 3. C2PA provenance checking (Phase 1 — reserved slot in fusion formula)
+4. Audio & voice clone detection (GPU-gated — stub wired, pending Replicate)
 
 ### Stage Group B — Source behavioural signals
 4. Account post history
@@ -131,6 +133,7 @@ Multi-signal confluence is the core reliability principle. No single detector is
 | Blocker | Detail | Fix |
 |---|---|---|
 | GPU scores silently skipped | HF free tier blocks GPU inference | Integrate Replicate API — **priority task** |
+| Audio pillar inactive | `REPLICATE_API_TOKEN` not configured | Integrate Replicate — same gate as face/frame |
 | YouTube ingestion broken | Bot detection blocks yt-dlp | Needs workaround (cookies/proxy approach) |
 
 ---
@@ -178,10 +181,11 @@ Multi-signal confluence is the core reliability principle. No single detector is
 ## Roadmap (near-term priorities)
 
 1. **Replicate integration** — unblock GPU-based deepfake scoring (highest priority)
-2. **YouTube ingestion fix** — workaround for bot detection
-3. **Source reputation analyser** — implement Stage Group B signals
-4. **C2PA manifest integration** — Phase 1 watermarking bridge standard
-5. **Share sheet registration** — iOS Share Extension + Android intent filter as primary
+2. **Audio pillar implementation** — stub + pipeline wired; evidence card live; full scoring pending Replicate GPU
+3. **YouTube ingestion fix** — workaround for bot detection
+4. **Source reputation analyser** — implement Stage Group B signals
+5. **C2PA manifest integration** — Phase 1 watermarking bridge standard
+6. **Share sheet registration** — iOS Share Extension + Android intent filter as primary
    zero-friction entry point for the verify loop
 
 ---
