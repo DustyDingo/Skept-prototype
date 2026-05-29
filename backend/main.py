@@ -22,7 +22,7 @@ from analysers.fusion import fuse
 from analysers.source_reputation import run_reputation
 from analysers.source_behaviour import run_source_behaviour
 from analysers.c2pa import run_c2pa
-from analysers.audio import analyse as analyse_audio, AudioResult
+from analysers.audio import analyse as analyse_audio
 
 jobs: dict[str, dict] = {}
 
@@ -119,7 +119,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         }
 
         if url:
-            meta_result, rep_result, beh_result, c2pa_result, audio_raw = await asyncio.gather(
+            meta_result, rep_result, beh_result, c2pa_result, audio_result = await asyncio.gather(
                 asyncio.to_thread(run_metadata, video_path, url),
                 asyncio.to_thread(run_reputation, url),
                 run_source_behaviour(url),
@@ -127,22 +127,13 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
                 analyse_audio(video_path),
             )
         else:
-            meta_result, c2pa_result, audio_raw = await asyncio.gather(
+            meta_result, c2pa_result, audio_result = await asyncio.gather(
                 asyncio.to_thread(run_metadata, video_path, ""),
                 asyncio.to_thread(run_c2pa, video_path),
                 analyse_audio(video_path),
             )
             rep_result = _skipped_rep
             beh_result = _skipped_beh
-
-        audio_result = {
-            "analyser":     "audio",
-            "status":       "skipped" if audio_raw.skipped else "complete",
-            "score":        None,
-            "signal_cards": audio_raw.signals,
-            "summary":      audio_raw.error if audio_raw.skipped else "Audio analysis complete.",
-            "error":        audio_raw.error,
-        }
 
         job["analysers"]["metadata"]          = meta_result
         job["analysers"]["source_reputation"] = rep_result

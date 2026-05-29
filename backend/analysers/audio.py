@@ -19,31 +19,17 @@ decision. Never stored, never logged.
 """
 
 import os
-from dataclasses import dataclass, field
 
 
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
 
-@dataclass
-class AudioResult:
-    skipped: bool = True
-    score: float = 0.0
-    # Sub-signals — populated when live
-    voice_clone_score: float | None = None
-    synthesis_artifact_score: float | None = None
-    prosody_anomaly_score: float | None = None
-    model_used: str | None = None
-    error: str | None = None
-    signals: list = field(default_factory=list)
-
-
-async def analyse(video_path: str) -> AudioResult:
+async def analyse(video_path: str) -> dict:
     """
     Audio & voice clone detection.
 
-    Currently a reserved stub — returns a skipped result with score 0.0
-    so the fusion layer can ignore it cleanly until the pillar is live.
+    Currently a reserved stub — returns a skipped result with score=None
+    so the fusion layer excludes it cleanly until the pillar is live.
 
     When implemented, will:
       1. Extract audio track from video_path (ffmpeg)
@@ -56,20 +42,28 @@ async def analyse(video_path: str) -> AudioResult:
       - Replicate API unreachable
     """
     if not REPLICATE_API_TOKEN:
-        return AudioResult(
-            skipped=True,
-            score=0.0,
-            error="REPLICATE_API_TOKEN not configured — audio pillar inactive"
-        )
+        return {
+            "analyser":     "audio",
+            "status":       "skipped",
+            "skip_reason":  "replicate_token_not_configured",
+            "score":        None,
+            "signal_cards": [],
+            "summary":      "Audio pillar inactive — REPLICATE_API_TOKEN not configured.",
+            "error":        None,
+        }
 
     # TODO: implement when Railway GPU instance is live
     # 1. ffmpeg -i video_path -vn -acodec pcm_s16le -ar 16000 audio.wav
     # 2. Send to Replicate model
-    # 3. Parse response into AudioResult fields
+    # 3. Parse response into signal_cards and score
     # 4. Discard all intermediate audio features immediately after scoring
 
-    return AudioResult(
-        skipped=True,
-        score=0.0,
-        error="Audio pillar not yet implemented"
-    )
+    return {
+        "analyser":     "audio",
+        "status":       "skipped",
+        "skip_reason":  "not_implemented",
+        "score":        None,
+        "signal_cards": [],
+        "summary":      "Audio pillar not yet implemented.",
+        "error":        None,
+    }
