@@ -123,7 +123,7 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
     synthetic_res = (width == height and width in {256, 512, 1024}) or width == 0
     res_signal = {
         "label":     "Resolution",
-        "value":     f"{width}×{height}" if width else "Unknown",
+        "value":     f"{width}x{height}" if width else "Unknown",
         "weight":    "low",
         "suspicious": synthetic_res,
     }
@@ -186,17 +186,17 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
     if platform_source:
         if score < 0.38:
             summary = (
-                "Original provenance not verifiable — platform re-encoding has removed "
+                "Original provenance not verifiable - platform re-encoding has removed "
                 "container metadata. No additional anomalies detected."
             )
         elif score < 0.50:
             summary = (
-                "Original provenance not verifiable — platform re-encoding has removed "
+                "Original provenance not verifiable - platform re-encoding has removed "
                 "container metadata. Some signals are unusual."
             )
         else:
             summary = (
-                "Original provenance not verifiable — platform re-encoding has removed "
+                "Original provenance not verifiable - platform re-encoding has removed "
                 "container metadata. Multiple anomalies detected."
             )
     else:
@@ -214,7 +214,7 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         "summary": summary,
         "raw": {
             "codec":         codec,
-            "resolution":    f"{width}×{height}",
+            "resolution":    f"{width}x{height}",
             "fps":           fps,
             "encoder":       encoder,
             "creation_time": creation_time,

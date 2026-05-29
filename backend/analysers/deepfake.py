@@ -97,10 +97,10 @@ async def run_deepfake(video_path: str) -> dict:
     if mean_fake < 0.3:
         summary = f"Frame analysis found no faceswap indicators ({mean_fake:.0%} mean probability)."
     elif mean_fake < 0.6:
-        summary = f"Frame analysis inconclusive — {mean_fake:.0%} mean faceswap probability across {len(valid)} sampled frames."
+        summary = f"Frame analysis inconclusive - {mean_fake:.0%} mean faceswap probability across {len(valid)} sampled frames."
     else:
         summary = (
-            f"Frame analysis flags faceswap characteristics — {mean_fake:.0%} mean and "
+            f"Frame analysis flags faceswap characteristics - {mean_fake:.0%} mean and "
             f"{max_fake:.0%} peak probability. "
             f"{len(high_conf)} frame(s) above high-confidence threshold."
         )
@@ -231,6 +231,6 @@ def _no_token_result() -> dict:
             "weight": "high",
             "suspicious": False,
         }],
-        "summary": "Frame-level analysis skipped — no Replicate API token configured.",
+        "summary": "Frame-level analysis skipped - no Replicate API token configured.",
         "model": REPLICATE_MODEL,
     }

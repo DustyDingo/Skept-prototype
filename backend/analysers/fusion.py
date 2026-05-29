@@ -72,14 +72,14 @@ def fuse(
         label       = "Likely authentic"
         description = (
             "Skept found no significant indicators of manipulation in this clip. "
-            "Results reflect the submitted copy only — re-encoding may have degraded forensic signals."
+            "Results reflect the submitted copy only - re-encoding may have degraded forensic signals."
         )
     elif final_score < 0.60:
         band        = "amber"
         label       = "Inconclusive"
         description = (
             "Skept detected some signals worth noting but cannot confirm manipulation. "
-            "Platform re-encoding typically degrades artifact-level signals — "
+            "Platform re-encoding typically degrades artifact-level signals - "
             "a clean result here does not guarantee authenticity."
         )
     else:
@@ -88,7 +88,7 @@ def fuse(
         description = (
             "Skept detected multiple signals consistent with AI manipulation or synthetic generation. "
             "This verdict is based on the submitted copy and should be treated as investigative, "
-            "not conclusive — re-analyse with the original file for stronger signal."
+            "not conclusive - re-analyse with the original file for stronger signal."
         )
 
     return {

@@ -556,7 +556,7 @@ def _build_signal_cards(
         })
         for r in bio_refs[:5]:
             status       = verified_refs.get(r["verify_url"], "unverifiable")
-            status_label = {"exists": "✓ live", "not_found": "✗ dead", "error": "timeout"}.get(status, "—")
+            status_label = {"exists": "✓ live", "not_found": "✗ dead", "error": "timeout"}.get(status, "-")
             cards.append({
                 "label":      r["raw"],
                 "value":      status_label,
