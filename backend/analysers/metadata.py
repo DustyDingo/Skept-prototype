@@ -9,20 +9,18 @@ Platform-context awareness:
   clip is expected behaviour, not a suspicious signal — so it carries zero
   score weight. The signal is still surfaced as informational context.
   For direct file uploads or unknown sources, absent metadata is scored
-  normally (0.4 weight) since an authentic original file should carry it.
+  normally since an authentic original file should carry camera provenance.
+
+Scoring model (50-anchored):
+  0.5 = no information (neutral). Below 0.5 = evidence of authenticity.
+  Above 0.5 = evidence of manipulation. Composite is the mean of scored
+  signals, soft-capped at 0.65 — metadata alone cannot confirm manipulation.
 """
 
 import json
 import subprocess
 from pathlib import Path
 
-
-# Base suspicion score applied to platform-sourced clips.
-# Even when all individual signals are clean, a platform re-encoded clip
-# has had its original provenance chain broken — we cannot confirm where
-# the file came from. This reflects unknown provenance, not confirmed
-# authenticity. Raw device files (no platform source) start at 0.0.
-_PLATFORM_BASE_SCORE = 0.45
 
 # Platforms known to strip camera/encoder metadata during re-encoding.
 # Absence of camera metadata on clips from these sources is expected.
@@ -61,8 +59,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
 
     platform_source = _is_platform_source(source_url)
 
-    signals          = []
-    score_components = []
+    signals      = []
+    score_values = []  # 50-anchored per-signal scores; mean becomes composite
 
     streams = probe.get("streams", [])
     fmt     = probe.get("format", {})
@@ -78,8 +76,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
     has_camera_meta = bool(encoder or creation_time)
 
     if platform_source:
-        # Platform re-encoding strips camera metadata — absence is normal.
-        # Surface as informational; no score penalty either way.
+        # Platform re-encoding strips camera metadata — absence is expected, not suspicious.
+        # Informational only; does not contribute to the scored composite.
         camera_signal = {
             "label":     "Camera/encoder metadata",
             "value":     encoder if has_camera_meta else "Stripped by platform",
@@ -87,10 +85,13 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
             "suspicious": False,
             "detail":    "Platform re-encoding removes original camera provenance.",
         }
-        score_components.append(0.0)
+        # Neutral: platform absence is genuinely uninformative — contributes 0.5 (unknown).
+        # This encodes baseline provenance uncertainty: we know the chain is broken,
+        # but that alone is neither evidence for nor against manipulation.
+        score_values.append(0.5)
     else:
-        # Direct file or unknown source — absent metadata is suspicious,
-        # since an authentic original file should carry camera provenance.
+        # Direct file: present metadata → evidence of authentic provenance (pulls below 0.5);
+        # absent metadata → suspicious for an original file (pushes above 0.5).
         camera_signal = {
             "label":     "Camera/encoder metadata present",
             "value":     has_camera_meta,
@@ -98,7 +99,7 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
             "weight":    "medium",
             "suspicious": not has_camera_meta,
         }
-        score_components.append(0.0 if has_camera_meta else 0.4)
+        score_values.append(0.28 if has_camera_meta else 0.65)
 
     signals.append(camera_signal)
 
@@ -112,7 +113,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         "suspicious": not bool(codec),
     }
     signals.append(codec_signal)
-    score_components.append(0.2 if not codec else 0.0)
+    # Neutral: 0.5. Recognised codec pulls below; unidentifiable codec pushes above.
+    score_values.append(0.28 if codec else 0.65)
 
     # ── Signal 3: Resolution plausibility ───────────────────────────────────
     width  = vs.get("width", 0)
@@ -126,7 +128,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         "suspicious": synthetic_res,
     }
     signals.append(res_signal)
-    score_components.append(0.3 if synthetic_res else 0.0)
+    # Neutral: 0.5. Broadcast-standard resolution pulls below; square synthetic dims push above.
+    score_values.append(0.75 if synthetic_res else 0.28)
 
     # ── Signal 4: Frame rate ─────────────────────────────────────────────────
     r_frame_rate = vs.get("r_frame_rate", "0/1")
@@ -143,7 +146,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         "suspicious": unusual_fps,
     }
     signals.append(fps_signal)
-    score_components.append(0.1 if unusual_fps else 0.0)
+    # Neutral: 0.5. Standard broadcast rate pulls below; non-standard rate pushes mildly above.
+    score_values.append(0.58 if unusual_fps else 0.28)
 
     # ── Signal 5: Audio/video stream pairing ────────────────────────────────
     has_audio = len(audio_streams) > 0
@@ -154,7 +158,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         "suspicious": not has_audio,
     }
     signals.append(audio_signal)
-    score_components.append(0.1 if not has_audio else 0.0)
+    # Neutral: 0.5. Audio-bearing video pulls below; silent video pushes mildly above.
+    score_values.append(0.28 if has_audio else 0.60)
 
     # ── Signal 6: Container format ───────────────────────────────────────────
     fmt_name = fmt.get("format_name", "")
@@ -167,45 +172,37 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
     signals.append(container_signal)
 
     # ── Composite score ──────────────────────────────────────────────────────
-    # Platform-sourced clips start at a base score reflecting broken
-    # provenance chain — original metadata has been stripped so we cannot
-    # confirm where the file came from. Additional signal anomalies add
-    # on top of this base. Raw device files start at 0.0.
-    base = _PLATFORM_BASE_SCORE if platform_source else 0.0
-    raw_score = min(base + sum(score_components), 1.0)
-
-    # Cap at 0.5 — metadata forensics cannot confirm manipulation,
-    # only raise suspicion.
-    score = round(min(raw_score, 0.5), 3)
+    # Mean of all contributing signal scores (50-anchored).
+    # Platform camera signal is informational-only and excluded from score_values.
+    # Soft cap at 0.65 — metadata alone cannot confirm manipulation.
+    if score_values:
+        raw_score = sum(score_values) / len(score_values)
+        score = round(min(raw_score, 0.65), 3)
+    else:
+        score = 0.5  # all signals informational — genuinely neutral
 
     suspicious_count = sum(1 for s in signals if s.get("suspicious"))
 
-    # Summary text is score-driven.
-    # Platform clips use different language — the base score reflects
-    # broken provenance chain, not detected manipulation.
     if platform_source:
-        if score <= _PLATFORM_BASE_SCORE:
-            # Only the base score, no additional signal anomalies
+        if score < 0.38:
             summary = (
                 "Original provenance not verifiable — platform re-encoding has removed "
                 "container metadata. No additional anomalies detected."
             )
-        elif score < 0.40:
+        elif score < 0.50:
             summary = (
                 "Original provenance not verifiable — platform re-encoding has removed "
-                "container metadata. Some additional signals are unusual."
+                "container metadata. Some signals are unusual."
             )
         else:
             summary = (
                 "Original provenance not verifiable — platform re-encoding has removed "
-                "container metadata. Multiple additional anomalies detected."
+                "container metadata. Multiple anomalies detected."
             )
     else:
-        if score == 0.0:
-            summary = "No metadata anomalies detected. Container provenance is intact."
-        elif score < 0.15:
-            summary = "Minor metadata signals noted — insufficient on their own to indicate manipulation."
-        elif score < 0.35:
+        if score < 0.35:
+            summary = "No significant metadata anomalies detected. Container provenance is intact."
+        elif score < 0.50:
             summary = "Some metadata anomalies detected. This file may be multiple encoding hops from source."
         else:
             summary = "Multiple metadata anomalies detected. Container provenance is absent or inconsistent."

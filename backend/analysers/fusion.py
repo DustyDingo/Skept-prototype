@@ -13,6 +13,14 @@ Verdict bands:
   Green  0.0 – 0.30   Likely authentic
   Amber  0.30 – 0.60  Inconclusive
   Red    0.60 – 1.0   Likely manipulated
+
+Scoring model assumption:
+  All analyser inputs use a 50-anchored scale: 0.5 = no information (neutral),
+  below 0.5 = evidence of authenticity, above 0.5 = evidence of manipulation.
+  A weighted mean of all-0.5 inputs produces exactly 0.5 (amber/inconclusive),
+  so absent or neutral signals correctly contribute no net push in either direction.
+  C2PA returns score=None when unavailable; it is excluded from the denominator
+  entirely so it does not dilute toward neutral.
 """
 
 WEIGHTS = {

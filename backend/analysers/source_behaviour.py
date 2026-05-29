@@ -109,11 +109,30 @@ async def run_source_behaviour(url: str) -> dict:
     if score is None:
         return _skip(result, "insufficient_data")
 
+    # Confidence floor: thin post history makes cadence/burst signals unreliable.
+    # A new account with few posts can look neutral or clean purely by accident —
+    # insufficient data should return near-0.5 (unknown), not a confident lean.
+    post_count = signals.get("_post_count", 0) or 0
+    age_days   = signals.get("_account_age_days") or 0
+    if post_count < 10:
+        scalar = 0.2
+    elif post_count < 30 or age_days < 30:
+        scalar = 0.5
+    elif post_count < 100:
+        scalar = 0.8
+    else:
+        scalar = 1.0
+
+    low_sample = scalar < 1.0
+    if low_sample:
+        score = round(0.5 + (score - 0.5) * scalar, 3)
+
     result.update({
         "status":       "complete",
         "score":        score,
         "confidence":   confidence,
         "flags":        flags,
+        "low_sample":   low_sample,
         "signals":      signals,
         "signal_cards": _build_signal_cards(signals, flags, bio_refs, verified_refs),
         "summary":      _build_summary(signals, flags, handle, bio_refs, verified_refs),
@@ -271,6 +290,8 @@ def _compute_signals(
 
     dates = sorted(d for d in (_parse_date(p) for p in posts) if d)
 
+    signals["_post_count"] = len(posts)
+
     # ── Context fields for identity_absence scoring (not shown as cards) ──────
     if dates:
         signals["_account_age_days"] = max((now - dates[0]).days, 1)
@@ -323,9 +344,16 @@ def _compute_signals(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _score(signals: dict) -> tuple[Optional[float], list[str], float]:
+    """
+    50-anchored: 0.5 = no information (neutral); below 0.5 = evidence of
+    authenticity; above 0.5 = evidence of manipulation. Missing or thin-sample
+    signals contribute 0.5 — they do not dilute toward authentic.
+    """
     sub_scores:  dict[str, float] = {}
     flags:       list[str]        = []
     data_points: int              = 0
+
+    post_count = signals.get("_post_count", 0) or 0
 
     # ── Signal 1: burst cadence ──────────────────────────────────────────────
     cv            = signals.get("cadence_cv")
@@ -334,23 +362,29 @@ def _score(signals: dict) -> tuple[Optional[float], list[str], float]:
 
     if cv is not None or max_7d_pct is not None:
         data_points += 1
-        burst_score = 0.10
+        if post_count < 20:
+            # Fewer than 20 posts: cadence/burst patterns are noise, not signal.
+            # Return 0.5 (unknown) rather than computing a score from thin data.
+            sub_scores["burst_cadence"] = 0.5
+        else:
+            # Neutral: 0.5. Even spread of activity pulls below; burst concentration pushes above.
+            burst_score = 0.28  # baseline: no anomalies detected (lean clean)
 
-        if max_7d_pct is not None and max_7d_pct > 0.75:
-            burst_score = max(burst_score, 0.88); flags.append("activity_concentrated_in_burst")
-        elif max_7d_pct is not None and max_7d_pct > 0.55:
-            burst_score = max(burst_score, 0.55); flags.append("elevated_burst_concentration")
+            if max_7d_pct is not None and max_7d_pct > 0.75:
+                burst_score = max(burst_score, 0.88); flags.append("activity_concentrated_in_burst")
+            elif max_7d_pct is not None and max_7d_pct > 0.55:
+                burst_score = max(burst_score, 0.55); flags.append("elevated_burst_concentration")
 
-        if cv is not None:
-            if cv > 2.5:
-                burst_score = max(burst_score, 0.85); flags.append("extreme_cadence_irregularity")
-            elif cv > 1.5:
-                burst_score = max(burst_score, 0.60); flags.append("irregular_cadence")
+            if cv is not None:
+                if cv > 2.5:
+                    burst_score = max(burst_score, 0.85); flags.append("extreme_cadence_irregularity")
+                elif cv > 1.5:
+                    burst_score = max(burst_score, 0.60); flags.append("irregular_cadence")
 
-        if max_day_posts is not None and max_day_posts >= 5:
-            burst_score = max(burst_score, 0.65); flags.append("multi_post_day_detected")
+            if max_day_posts is not None and max_day_posts >= 5:
+                burst_score = max(burst_score, 0.65); flags.append("multi_post_day_detected")
 
-        sub_scores["burst_cadence"] = burst_score
+            sub_scores["burst_cadence"] = burst_score
 
     # ── Signal 2: bio cross-platform ─────────────────────────────────────────
     refs_found   = signals.get("bio_refs_found", 0)
@@ -361,38 +395,48 @@ def _score(signals: dict) -> tuple[Optional[float], list[str], float]:
     data_points += 1  # bio always checked
 
     if refs_found == 0:
-        sub_scores["bio_cross_platform"] = 0.0  # absence handled by identity_absence
+        # Neutral: absence of links is genuinely uninformative here — age-weighted
+        # identity scoring is handled separately by identity_absence.
+        sub_scores["bio_cross_platform"] = 0.5
     elif verifiable > 0 and nf_count > 0 and exists_count == 0:
+        # All links dead — strong signal of fabricated/disposable identity.
         sub_scores["bio_cross_platform"] = 0.78; flags.append("bio_links_all_dead")
     elif verifiable > 0 and nf_count > exists_count:
-        sub_scores["bio_cross_platform"] = 0.50; flags.append("bio_links_mostly_dead")
+        sub_scores["bio_cross_platform"] = 0.55; flags.append("bio_links_mostly_dead")
     elif exists_count >= 2:
-        sub_scores["bio_cross_platform"] = 0.05
+        # Neutral: 0.5. Multiple live cross-platform links pull below; dead links push above.
+        sub_scores["bio_cross_platform"] = 0.25
     elif exists_count >= 1:
-        sub_scores["bio_cross_platform"] = 0.10
+        sub_scores["bio_cross_platform"] = 0.32
     else:
-        sub_scores["bio_cross_platform"] = 0.20  # refs found but none verifiable
+        sub_scores["bio_cross_platform"] = 0.45  # refs found but none verifiable
 
     # ── Signal 3: cross-platform identity absence ────────────────────────────
     followers = signals.get("_follower_count")
     age       = signals.get("_account_age_days")
 
     if refs_found > 0:
-        sub_scores["identity_absence"] = 0.0
+        # Has cross-platform presence — evidence of authentic identity (pull below 0.5).
+        sub_scores["identity_absence"] = 0.28
+    elif age is not None and age < 60:
+        # New account: absence of links is uninformative — may simply not have added
+        # them yet. Contribute 0.5 (unknown) rather than scoring toward clean.
+        data_points += 1
+        sub_scores["identity_absence"] = 0.5
     elif followers is not None and age is not None:
         data_points += 1
+        # Neutral: 0.5. Absence of links on an established account pushes above 0.5;
+        # the more established the account, the more suspicious the absence.
         if followers > 100_000 and age > 180:
             sub_scores["identity_absence"] = 0.85; flags.append("high_follower_no_bio_links")
         elif followers > 50_000 and age > 90:
             sub_scores["identity_absence"] = 0.70; flags.append("established_account_no_bio_links")
         elif followers > 10_000 and age > 60:
-            sub_scores["identity_absence"] = 0.45
-        elif followers > 1_000 and age > 30:
-            sub_scores["identity_absence"] = 0.25
+            sub_scores["identity_absence"] = 0.55
         else:
-            sub_scores["identity_absence"] = 0.08
+            sub_scores["identity_absence"] = 0.50
     else:
-        sub_scores["identity_absence"] = 0.0
+        sub_scores["identity_absence"] = 0.5
 
     if not sub_scores:
         return None, [], 0.0
@@ -557,6 +601,7 @@ def _base_result() -> dict:
         "score":          None,
         "confidence":     0.0,
         "flags":          [],
+        "low_sample":     False,
         "signals":        {},
         "signal_cards":   [],
         "summary":        None,

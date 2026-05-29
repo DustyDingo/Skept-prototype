@@ -90,9 +90,29 @@ def run_reputation(url: str) -> dict:
         result["signals"] = signals
 
         score, flags, confidence = _score(signals)
+
+        # Confidence floor: thin post history means individual signals are unreliable.
+        # A brand-new account with few posts can look clean by accident — insufficient
+        # data should return near-0.5 (unknown), not a confident lean in either direction.
+        posts    = signals.get("post_count_fetched", 0) or 0
+        age_days = signals.get("account_age_days_min") or 0
+        if posts < 10:
+            scalar = 0.2
+        elif posts < 30 or age_days < 30:
+            scalar = 0.5
+        elif posts < 100:
+            scalar = 0.8
+        else:
+            scalar = 1.0
+
+        low_sample = scalar < 1.0
+        if low_sample and score is not None:
+            score = round(0.5 + (score - 0.5) * scalar, 3)
+
         result["score"]        = score
         result["confidence"]   = confidence
         result["flags"]        = flags
+        result["low_sample"]   = low_sample
         result["status"]       = "complete"
         result["summary"]      = _build_summary(signals, flags, handle, platform)
         result["signal_cards"] = _build_signal_cards(signals, flags)
@@ -120,6 +140,7 @@ def _base_result() -> dict:
         "score":          None,
         "confidence":     0.0,
         "flags":          [],
+        "low_sample":     False,
         "signals":        {},
         "signal_cards":   [],
         "summary":        None,
@@ -272,7 +293,13 @@ def _parse_date(post: dict) -> Optional[datetime]:
 # ── 4. Scoring ───────────────────────────────────────────────────────────────
 
 def _score(signals: dict) -> tuple:
-    """Returns (composite_score, flags, confidence)."""
+    """Returns (composite_score, flags, confidence).
+
+    50-anchored: 0.5 = no information (genuinely unknown); below 0.5 = evidence
+    of authenticity; above 0.5 = evidence of manipulation. Missing signals are
+    excluded from both numerator and denominator — they do not dilute toward
+    authentic.
+    """
     sub_scores  = {}
     flags       = []
     data_points = 0
@@ -280,57 +307,62 @@ def _score(signals: dict) -> tuple:
     age = signals.get("account_age_days_min")
     if age is not None:
         data_points += 1
+        # Neutral: 0.5. Established account pulls below; brand-new account pushes above.
         if age < 7:
-            sub_scores["account_age"] = 0.95; flags.append("account_under_7_days")
+            sub_scores["account_age"] = 0.90; flags.append("account_under_7_days")
         elif age < 30:
-            sub_scores["account_age"] = 0.72; flags.append("account_under_30_days")
+            sub_scores["account_age"] = 0.78; flags.append("account_under_30_days")
         elif age < 90:
-            sub_scores["account_age"] = 0.35; flags.append("account_under_90_days")
+            sub_scores["account_age"] = 0.58; flags.append("account_under_90_days")
         else:
-            sub_scores["account_age"] = 0.05
+            sub_scores["account_age"] = 0.28
 
     rate = signals.get("cadence_posts_per_day")
     if rate is not None:
         data_points += 1
+        # Neutral: 0.5. Low sustained rate pulls below; extreme burst rate pushes above.
         if rate > 15:
-            sub_scores["post_rate"] = 0.90; flags.append("extreme_post_rate")
+            sub_scores["post_rate"] = 0.88; flags.append("extreme_post_rate")
         elif rate > 8:
-            sub_scores["post_rate"] = 0.65; flags.append("high_post_rate")
+            sub_scores["post_rate"] = 0.72; flags.append("high_post_rate")
         elif rate > 3:
-            sub_scores["post_rate"] = 0.30
+            sub_scores["post_rate"] = 0.52
         else:
-            sub_scores["post_rate"] = 0.08
+            sub_scores["post_rate"] = 0.38
 
     recent_pct = signals.get("recent_7d_pct")
     if recent_pct is not None:
         data_points += 1
+        # Neutral: 0.5. Evenly spread historical activity pulls below; sudden burst pushes above.
         if recent_pct > 0.85:
             sub_scores["recent_concentration"] = 0.88; flags.append("sudden_activity_burst")
         elif recent_pct > 0.60:
-            sub_scores["recent_concentration"] = 0.52; flags.append("elevated_recent_activity")
+            sub_scores["recent_concentration"] = 0.80; flags.append("elevated_recent_activity")
         else:
-            sub_scores["recent_concentration"] = 0.12
+            sub_scores["recent_concentration"] = 0.30
 
     fpp = signals.get("follower_per_post")
     if fpp is not None:
         data_points += 1
+        # Neutral: 0.5. Healthy follower ratio pulls below; near-zero ratio pushes above.
         if fpp < 5:
             sub_scores["follower_post_ratio"] = 0.72; flags.append("low_follower_per_post")
         elif fpp < 50:
-            sub_scores["follower_post_ratio"] = 0.30
+            sub_scores["follower_post_ratio"] = 0.48
         else:
-            sub_scores["follower_post_ratio"] = 0.05
+            sub_scores["follower_post_ratio"] = 0.28
 
     digit_ratio = signals.get("username_digit_ratio")
     has_words   = signals.get("username_has_words")
     if digit_ratio is not None:
         data_points += 1
+        # Neutral: 0.5. Readable word-based username pulls below; digit-heavy random string pushes above.
         if digit_ratio > 0.5 and not has_words:
-            sub_scores["username_pattern"] = 0.80; flags.append("numeric_heavy_username")
+            sub_scores["username_pattern"] = 0.78; flags.append("numeric_heavy_username")
         elif digit_ratio > 0.3:
-            sub_scores["username_pattern"] = 0.45
+            sub_scores["username_pattern"] = 0.55
         else:
-            sub_scores["username_pattern"] = 0.10
+            sub_scores["username_pattern"] = 0.28
 
     if not sub_scores:
         return None, [], 0.0
