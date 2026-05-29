@@ -22,7 +22,7 @@ from analysers.fusion import fuse
 from analysers.source_reputation import run_reputation
 from analysers.source_behaviour import run_source_behaviour
 from analysers.c2pa import run_c2pa
-from analysers.audio import analyse as analyse_audio
+from analysers.audio import analyse as analyse_audio, AudioResult
 
 jobs: dict[str, dict] = {}
 
@@ -139,7 +139,16 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["analysers"]["source_reputation"] = rep_result
         job["analysers"]["source_behaviour"]  = beh_result
         job["analysers"]["c2pa"]              = c2pa_result
-        job["analysers"]["audio"]             = audio_result
+        job["analysers"]["audio"]             = {
+            "skipped":                  audio_result.skipped,
+            "score":                    audio_result.score,
+            "voice_clone_score":        audio_result.voice_clone_score,
+            "synthesis_artifact_score": audio_result.synthesis_artifact_score,
+            "prosody_anomaly_score":    audio_result.prosody_anomaly_score,
+            "model_used":               audio_result.model_used,
+            "error":                    audio_result.error,
+            "signals":                  audio_result.signals,
+        }
 
         job["state"] = "stage2"
         job["analysers"]["deepfake"] = {"status": "running"}
