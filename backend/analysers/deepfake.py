@@ -17,12 +17,15 @@ Replaces: capcheck/ai-image-detection (404 — not actually hosted on Replicate)
 """
 
 import asyncio
+import logging
 import os
 import subprocess
 import tempfile
 from pathlib import Path
 
 import replicate
+
+logger = logging.getLogger(__name__)
 
 REPLICATE_MODEL = "scamai/deepfake-faceswap-detection:163f897bd0e920d375e4e67299bfc4c5eeeb8beb243d5ea9b309d1c299f562e7"
 FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "3"))
@@ -33,7 +36,13 @@ async def run_deepfake(video_path: str) -> dict:
     if not REPLICATE_API_TOKEN:
         return _no_token_result()
 
+    logger.warning("[deepfake] starting — video=%r FRAMES_TO_SAMPLE=%d", video_path, FRAMES_TO_SAMPLE)
     frame_paths = await asyncio.to_thread(_extract_frames, video_path, FRAMES_TO_SAMPLE)
+    logger.warning(
+        "[deepfake] extraction complete — %d/%d frames returned: %s",
+        len(frame_paths), FRAMES_TO_SAMPLE,
+        [(Path(p).name, Path(p).stat().st_size) for p in frame_paths],
+    )
 
     if not frame_paths:
         return {
@@ -135,13 +144,19 @@ def _extract_frames(video_path: str, n: int) -> list[str]:
     for i in range(n):
         t = margin + i * interval
         out = Path(tmpdir) / f"frame_{i:03d}.jpg"
-        subprocess.run(
+        proc = subprocess.run(
             ["ffmpeg", "-ss", str(t), "-i", video_path,
              "-frames:v", "1", "-q:v", "2", str(out), "-y", "-loglevel", "error"],
             capture_output=True, timeout=15
         )
         if out.exists() and out.stat().st_size > 0:
+            logger.warning("[deepfake] frame %d OK — t=%.2fs size=%d bytes", i, t, out.stat().st_size)
             frames.append(str(out))
+        else:
+            logger.warning(
+                "[deepfake] frame %d FAILED — t=%.2fs exists=%s returncode=%d stderr=%r",
+                i, t, out.exists(), proc.returncode, proc.stderr[:200] if proc.stderr else b"",
+            )
     return frames
 
 
@@ -155,21 +170,23 @@ async def _score_frame(frame_path: str) -> dict | None:
     adjust if needed without another deploy cycle.
     """
     try:
-        with open(frame_path, "rb") as f:
-            output = await asyncio.to_thread(
-                replicate.run,
-                REPLICATE_MODEL,
-                input={"image": f},
-            )
+        frame_size = Path(frame_path).stat().st_size
+        logger.warning("[deepfake] scoring %r — file size=%d bytes", Path(frame_path).name, frame_size)
 
-        # Log raw output once so we can confirm schema from Railway logs
-        print(f"[deepfake] raw output type={type(output).__name__} value={output!r}")
+        image_bytes = Path(frame_path).read_bytes()
+        output = await asyncio.to_thread(
+            replicate.run,
+            REPLICATE_MODEL,
+            input={"image": image_bytes},
+        )
+
+        logger.warning("[deepfake] raw output type=%s value=%r", type(output).__name__, output)
 
         fake_prob = _parse_fake_prob(output)
         return {"frame": frame_path, "fake_prob": round(float(fake_prob), 4)}
 
     except Exception as e:
-        print(f"Frame scoring error ({frame_path}): {e}")
+        logger.warning("[deepfake] frame scoring error (%s): %s", Path(frame_path).name, e)
         return None
 
 
