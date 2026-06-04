@@ -86,10 +86,12 @@ def run_reputation(url: str, ydl_info: dict | None = None) -> dict:
 
         entries, account_meta = _fetch_account_data(account_url, platform)
 
-        if entries is None:
-            return _skip(result, "account_fetch_blocked")
-        if len(entries) == 0:
-            return _skip(result, "no_posts_accessible")
+        if entries is None or len(entries) == 0:
+            if not ydl_info:
+                reason = "account_fetch_blocked" if entries is None else "no_posts_accessible"
+                return _skip(result, reason)
+            # Account page rate-limited or empty — score from ydl_info fields only
+            entries, account_meta = [], {}
 
         signals = _compute_signals(entries, account_meta, handle)
         result["signals"] = signals

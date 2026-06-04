@@ -139,12 +139,16 @@ async def run_source_behaviour(url: str, ydl_info: dict | None = None) -> dict:
         )
     except Exception as exc:
         logger.error(f"[source_behaviour] fetch failed: {exc}", exc_info=True)
-        return _skip(result, "account_fetch_error")
+        if not ydl_info:
+            return _skip(result, "account_fetch_error")
+        entries, account_meta = None, {}
 
-    if entries is None:
-        return _skip(result, "account_fetch_blocked")
-    if not entries:
-        return _skip(result, "no_posts_accessible")
+    if entries is None or not entries:
+        if not ydl_info:
+            reason = "account_fetch_blocked" if entries is None else "no_posts_accessible"
+            return _skip(result, reason)
+        # Account page rate-limited or empty — score from ydl_info fields only
+        entries, account_meta = [], {}
 
     bio_text       = account_meta.get("description") or account_meta.get("channel_description") or ""
     follower_count = account_meta.get("channel_follower_count")
