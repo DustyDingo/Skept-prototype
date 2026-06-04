@@ -138,7 +138,7 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         fps = round(num / den, 2) if den else 0
     except Exception:
         fps = 0
-    unusual_fps = fps > 0 and fps not in {24, 25, 29.97, 30, 50, 59.94, 60}
+    unusual_fps = fps > 0 and not any(abs(fps - s) < 0.1 for s in (24, 25, 30, 48, 50, 60))
     fps_signal = {
         "label":     "Frame rate",
         "value":     f"{fps} fps" if fps else "Unknown",
