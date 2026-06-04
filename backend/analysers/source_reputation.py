@@ -71,6 +71,11 @@ def run_reputation(url: str, ydl_info: dict | None = None) -> dict:
     """
     result = _base_result()
 
+    logger.warning(
+        "[source_reputation] called — url=%r ydl_info_present=%s ydl_info_keys=%r",
+        url, ydl_info is not None, list((ydl_info or {}).keys())[:12],
+    )
+
     try:
         platform, account_url, handle = _extract_account_info(url, ydl_info)
         result["platform"]       = platform

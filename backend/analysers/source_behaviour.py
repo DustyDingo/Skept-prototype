@@ -100,6 +100,11 @@ async def run_source_behaviour(url: str, ydl_info: dict | None = None) -> dict:
     """Async entry point matching the run_* naming convention."""
     result = _base_result()
 
+    logger.warning(
+        "[source_behaviour] called — url=%r ydl_info_present=%s ydl_info_keys=%r",
+        url, ydl_info is not None, list((ydl_info or {}).keys())[:12],
+    )
+
     handle = _extract_tiktok_handle(url)
     if handle:
         account_url = f"https://www.tiktok.com/@{handle}"
