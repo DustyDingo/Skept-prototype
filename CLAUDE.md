@@ -25,7 +25,7 @@ encounter viral clips and want a practical, accessible way to assess authenticit
 - **Video ingestion:** yt-dlp
 - **Metadata analysis:** ffprobe
 - **Deepfake detection:** HuggingFace — `prithivMLmods/deepfake-detector-model-v1`
-- **GPU scoring (pending):** Replicate (not yet integrated — current blocker)
+- **GPU scoring:** Replicate (active — scamai/deepfake-faceswap-detection, sequential frame scoring)
 - **Frontend:** Embedded HTML/CSS/JS string inside `main.py` — do NOT edit `frontend/index.html`
 - **Job store:** In-memory dict (`jobs: dict[str, JobStatus]`) — stateless, no DB
 - **Deployment:** Railway via GitHub push to main
@@ -132,8 +132,7 @@ Multi-signal confluence is the core reliability principle. No single detector is
 
 | Blocker | Detail | Fix |
 |---|---|---|
-| GPU scores silently skipped | HF free tier blocks GPU inference | Integrate Replicate API — **priority task** |
-| Audio pillar inactive | `REPLICATE_API_TOKEN` not configured | Integrate Replicate — same gate as face/frame |
+| Audio pillar | Replicate API token set but audio analyser returning no output — stub wired, scoring pending | Investigate audio analyser log output |
 | YouTube ingestion broken | Bot detection blocks yt-dlp | Needs workaround (cookies/proxy approach) |
 
 ---
