@@ -85,7 +85,7 @@ def _resolve_account_from_video(url: str) -> tuple[Optional[str], Optional[str]]
             info = ydl.extract_info(url, download=False)
         if info:
             account_url = info.get("uploader_url") or info.get("channel_url")
-            handle      = info.get("uploader_id") or info.get("uploader")
+            handle      = info.get("uploader") or info.get("uploader_id")
             return account_url, handle
     except Exception as exc:
         logger.debug(f"[source_behaviour] video meta resolve failed: {exc}")
@@ -106,7 +106,7 @@ async def run_source_behaviour(url: str, ydl_info: dict | None = None) -> dict:
     elif _INSTAGRAM_RE.search(url):
         if ydl_info:
             account_url = ydl_info.get("uploader_url") or ydl_info.get("channel_url")
-            handle      = ydl_info.get("uploader_id") or ydl_info.get("uploader")
+            handle      = ydl_info.get("uploader") or ydl_info.get("uploader_id")
             if not account_url and handle:
                 account_url = f"https://www.instagram.com/{handle}/"
         else:

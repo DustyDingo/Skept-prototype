@@ -181,8 +181,8 @@ def _extract_account_info(url: str, ydl_info: dict | None = None) -> tuple:
     if platform in ("youtube", "instagram", "facebook") and not account_url:
         if ydl_info:
             account_url = ydl_info.get("channel_url") or ydl_info.get("uploader_url")
-            handle      = (ydl_info.get("uploader_id") or ydl_info.get("channel_id")
-                           or ydl_info.get("uploader"))
+            handle      = (ydl_info.get("uploader") or ydl_info.get("channel")
+                           or ydl_info.get("uploader_id") or ydl_info.get("channel_id"))
             if not account_url and handle:
                 account_url = f"https://www.instagram.com/{handle}/"
         else:
