@@ -176,6 +176,17 @@ def _extract_account_info(url: str, ydl_info: dict | None = None) -> tuple:
 
     if platform in ("youtube", "instagram", "facebook") and not account_url:
         if ydl_info:
+            logger.info(
+                "[source_reputation] ydl_info fields for %s — "
+                "uploader=%r uploader_id=%r uploader_url=%r "
+                "channel=%r channel_url=%r",
+                platform,
+                ydl_info.get("uploader"),
+                ydl_info.get("uploader_id"),
+                ydl_info.get("uploader_url"),
+                ydl_info.get("channel"),
+                ydl_info.get("channel_url"),
+            )
             account_url = ydl_info.get("channel_url") or ydl_info.get("uploader_url")
             handle      = (ydl_info.get("uploader_id") or ydl_info.get("channel_id")
                            or ydl_info.get("uploader"))
