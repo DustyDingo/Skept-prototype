@@ -32,6 +32,13 @@ REPLICATE_MODEL = "scamai/deepfake-faceswap-detection:163f897bd0e920d375e4e67299
 FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "6"))
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
 
+# Logged at import time so the resolved value is visible in Railway on every deploy.
+print(
+    f"[deepfake] FRAMES_TO_SAMPLE={FRAMES_TO_SAMPLE} "
+    f"(SKEPT_FRAMES env={os.getenv('SKEPT_FRAMES', 'not set')})",
+    flush=True,
+)
+
 
 async def run_deepfake(video_path: str) -> dict:
     if not REPLICATE_API_TOKEN:
@@ -61,15 +68,17 @@ async def run_deepfake(video_path: str) -> dict:
             return await _score_frame(fp)
 
     results = await asyncio.gather(*[score_one(fp) for fp in frame_paths])
-    valid = [r for r in results if r is not None]
+    valid  = [r for r in results if r is not None and "fake_prob"    in r]
+    errors = [r for r in results if r is not None and "model_error"  in r]
 
     if not valid:
+        model_msg = errors[0]["model_error"] if errors else "all frame requests failed"
         return {
-            "status": "error",
-            "error": "All frame requests failed.",
-            "score": 0.5,
+            "status":  "error",
+            "score":   None,
+            "error":   model_msg,
             "signals": [],
-            "summary": "Deepfake analyser returned no results.",
+            "summary": f"Frame analysis unavailable — {model_msg}",
         }
 
     fake_probs = [r["fake_prob"] for r in valid]
@@ -184,6 +193,10 @@ async def _score_frame(frame_path: str) -> dict | None:
         logger.warning("[deepfake] raw output type=%s value=%r", type(output).__name__, output)
 
         fake_prob = _parse_fake_prob(output)
+        if fake_prob is None:
+            model_error = str(output) if output is not None else "no output from model"
+            logger.warning("[deepfake] model error for %s: %r", Path(frame_path).name, model_error)
+            return {"frame": frame_path, "model_error": model_error}
         return {"frame": frame_path, "fake_prob": round(float(fake_prob), 4)}
 
     except Exception as e:
@@ -191,13 +204,22 @@ async def _score_frame(frame_path: str) -> dict | None:
         return None
 
 
-def _parse_fake_prob(output) -> float:
+def _parse_fake_prob(output) -> float | None:
     """
     Defensive parser for Replicate model output.
-    Handles the most common return shapes until schema is confirmed from logs.
+    Returns None when the model signals an error or returns an unrecognised
+    string — callers must treat None as a model failure, not a 0.5 score.
     """
     if output is None:
-        return 0.5
+        return None
+
+    if isinstance(output, str):
+        if output.lower().startswith("error:"):
+            return None
+        try:
+            return float(output)
+        except ValueError:
+            return None
 
     # Dict: {"score": 0.95} or {"fake": 0.95} or {"probability": 0.95}
     if isinstance(output, dict):
