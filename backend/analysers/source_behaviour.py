@@ -96,7 +96,7 @@ def _resolve_account_from_video(url: str) -> tuple[Optional[str], Optional[str]]
 # PUBLIC INTERFACE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def run_source_behaviour(url: str) -> dict:
+async def run_source_behaviour(url: str, ydl_info: dict | None = None) -> dict:
     """Async entry point matching the run_* naming convention."""
     result = _base_result()
 
@@ -104,7 +104,11 @@ async def run_source_behaviour(url: str) -> dict:
     if handle:
         account_url = f"https://www.tiktok.com/@{handle}"
     elif _INSTAGRAM_RE.search(url):
-        account_url, handle = await asyncio.to_thread(_resolve_account_from_video, url)
+        if ydl_info:
+            account_url = ydl_info.get("uploader_url") or ydl_info.get("channel_url")
+            handle      = ydl_info.get("uploader_id") or ydl_info.get("uploader")
+        else:
+            account_url, handle = await asyncio.to_thread(_resolve_account_from_video, url)
         if not account_url or not handle:
             return _skip(result, "instagram_account_not_resolvable")
     else:

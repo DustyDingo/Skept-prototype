@@ -15,6 +15,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 import aiofiles
+import yt_dlp
 
 from analysers.metadata import run_metadata
 from analysers.deepfake import run_deepfake
@@ -99,7 +100,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
     job = jobs[job_id]
     try:
         job["state"] = "ingesting"
-        video_path = await ingest(url, workdir)
+        video_path, ydl_info = await ingest(url, workdir)
         job["state"] = "stage1"
         job["analysers"]["metadata"]          = {"status": "running"}
         job["analysers"]["source_reputation"] = {"status": "running"}
@@ -121,8 +122,8 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         if url:
             meta_result, rep_result, beh_result, c2pa_result, audio_result = await asyncio.gather(
                 asyncio.to_thread(run_metadata, video_path, url),
-                asyncio.to_thread(run_reputation, url),
-                run_source_behaviour(url),
+                asyncio.to_thread(run_reputation, url, ydl_info),
+                run_source_behaviour(url, ydl_info),
                 asyncio.to_thread(run_c2pa, video_path),
                 analyse_audio(video_path),
             )
@@ -162,29 +163,31 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["state"] = "error"
         job["error"] = str(e)
 
-async def ingest(url: str | None, workdir: str) -> str:
+async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
     if url:
         out = Path(workdir) / "video.mp4"
-        proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", url,
-            "-o", str(out),
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            "--no-playlist", "--quiet",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"yt-dlp failed: {stderr.decode()}")
+
+        def _download() -> dict:
+            opts = {
+                "outtmpl":             str(out),
+                "format":              "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "merge_output_format": "mp4",
+                "noplaylist":          True,
+                "quiet":               True,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=True) or {}
+
+        ydl_info = await asyncio.to_thread(_download)
+
         if not out.exists():
             candidates = list(Path(workdir).glob("video.*"))
             if not candidates:
                 raise RuntimeError("yt-dlp produced no output file.")
             out = candidates[0]
-        return str(out)
+        return str(out), ydl_info
     else:
         candidates = list(Path(workdir).glob("upload.*"))
         if not candidates:
             raise RuntimeError("No uploaded file found.")
-        return str(candidates[0])
+        return str(candidates[0]), {}

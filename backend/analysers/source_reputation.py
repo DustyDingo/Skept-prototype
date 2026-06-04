@@ -56,7 +56,7 @@ MAX_POSTS = 30
 # PUBLIC INTERFACE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def run_reputation(url: str) -> dict:
+def run_reputation(url: str, ydl_info: dict | None = None) -> dict:
     """
     Run the source reputation analyser on a submitted clip URL.
 
@@ -72,7 +72,7 @@ def run_reputation(url: str) -> dict:
     result = _base_result()
 
     try:
-        platform, account_url, handle = _extract_account_info(url)
+        platform, account_url, handle = _extract_account_info(url, ydl_info)
         result["platform"]       = platform
         result["account_handle"] = handle
 
@@ -159,7 +159,7 @@ def _skip(result: dict, reason: str) -> dict:
 
 # ── 1. Account URL resolution ────────────────────────────────────────────────
 
-def _extract_account_info(url: str) -> tuple:
+def _extract_account_info(url: str, ydl_info: dict | None = None) -> tuple:
     """Returns (platform, account_url, handle)."""
     platform    = "unknown"
     account_url = None
@@ -175,7 +175,12 @@ def _extract_account_info(url: str) -> tuple:
             break
 
     if platform in ("youtube", "instagram", "facebook") and not account_url:
-        account_url, handle = _resolve_via_video_meta(url, platform)
+        if ydl_info:
+            account_url = ydl_info.get("channel_url") or ydl_info.get("uploader_url")
+            handle      = (ydl_info.get("uploader_id") or ydl_info.get("channel_id")
+                           or ydl_info.get("uploader"))
+        else:
+            account_url, handle = _resolve_via_video_meta(url, platform)
 
     return platform, account_url, handle
 
