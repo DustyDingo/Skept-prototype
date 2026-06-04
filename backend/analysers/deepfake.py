@@ -19,6 +19,7 @@ Replaces: capcheck/ai-image-detection (404 — not actually hosted on Replicate)
 import asyncio
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from io import BytesIO
@@ -216,6 +217,10 @@ def _parse_fake_prob(output) -> float | None:
     if isinstance(output, str):
         if output.lower().startswith("error:"):
             return None
+        # Handle "Deepfake faceswap probability = 0.2907" and similar sentence formats
+        match = re.search(r'=\s*([\d.]+)', output)
+        if match:
+            return float(match.group(1))
         try:
             return float(output)
         except ValueError:
