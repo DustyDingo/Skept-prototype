@@ -20,6 +20,7 @@ import asyncio
 import logging
 import os
 import re
+import statistics
 import subprocess
 import tempfile
 from io import BytesIO
@@ -87,6 +88,9 @@ async def run_deepfake(video_path: str) -> dict:
     max_fake = round(max(fake_probs), 3)
     high_conf = [r for r in valid if r["fake_prob"] > 0.7]
 
+    std_dev = statistics.stdev(fake_probs) if len(fake_probs) > 1 else 0.0
+    high_variance = std_dev > 0.25
+
     signals = [
         {
             "label": "Frames analysed",
@@ -114,6 +118,14 @@ async def run_deepfake(video_path: str) -> dict:
         },
     ]
 
+    if high_variance:
+        signals.append({
+            "label": "High score variance across frames",
+            "value": f"Scores ranged {min(fake_probs):.0%} – {max(fake_probs):.0%}. May reflect scene cuts or multiple subjects rather than manipulation.",
+            "weight": "medium",
+            "suspicious": False,
+        })
+
     if mean_fake < 0.3:
         summary = f"Frame analysis found no faceswap indicators ({mean_fake:.0%} mean probability)."
     elif mean_fake < 0.6:
@@ -132,6 +144,7 @@ async def run_deepfake(video_path: str) -> dict:
         "summary": summary,
         "model": REPLICATE_MODEL,
         "frames_sampled": len(valid),
+        "high_variance": high_variance,
     }
 
 
