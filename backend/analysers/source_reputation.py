@@ -44,7 +44,7 @@ _PLATFORM_PATTERNS = [
     (r"(?:twitter|x)\.com/([\w]+)/status/", "twitter",   "https://twitter.com/{}"),
     (r"bsky\.app/profile/([\w.]+)",         "bluesky",   "https://bsky.app/profile/{}"),
     (r"youtu(?:be\.com|\.be)",              "youtube",   None),
-    (r"instagram\.com/p/",                  "instagram", None),
+    (r"instagram\.com/(?:p|reel|reels)/",    "instagram", None),
     (r"facebook\.com/",                     "facebook",  None),
     (r"reddit\.com/r/",                     "reddit",    None),
 ]

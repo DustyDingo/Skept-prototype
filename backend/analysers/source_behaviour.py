@@ -59,14 +59,37 @@ _PLATFORM_KEYWORDS_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ── TikTok URL → account handle ──────────────────────────────────────────────
+# ── Platform URL helpers ─────────────────────────────────────────────────────
 
 _TIKTOK_HANDLE_RE = re.compile(r"tiktok\.com/@([\w.]+)", re.IGNORECASE)
+_INSTAGRAM_RE     = re.compile(r"instagram\.com/(?:p|reel|reels)/", re.IGNORECASE)
 
 
 def _extract_tiktok_handle(url: str) -> Optional[str]:
     m = _TIKTOK_HANDLE_RE.search(url)
     return m.group(1) if m else None
+
+
+def _resolve_account_from_video(url: str) -> tuple[Optional[str], Optional[str]]:
+    """Use yt-dlp to extract account URL and handle from a video page URL."""
+    ydl_opts = {
+        "quiet":          True,
+        "no_warnings":    True,
+        "skip_download":  True,
+        "extract_flat":   False,
+        "socket_timeout": 10,
+        "retries":        1,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if info:
+            account_url = info.get("uploader_url") or info.get("channel_url")
+            handle      = info.get("uploader_id") or info.get("uploader")
+            return account_url, handle
+    except Exception as exc:
+        logger.debug(f"[source_behaviour] video meta resolve failed: {exc}")
+    return None, None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -78,11 +101,16 @@ async def run_source_behaviour(url: str) -> dict:
     result = _base_result()
 
     handle = _extract_tiktok_handle(url)
-    if not handle:
-        return _skip(result, "non_tiktok_url")
+    if handle:
+        account_url = f"https://www.tiktok.com/@{handle}"
+    elif _INSTAGRAM_RE.search(url):
+        account_url, handle = await asyncio.to_thread(_resolve_account_from_video, url)
+        if not account_url or not handle:
+            return _skip(result, "instagram_account_not_resolvable")
+    else:
+        return _skip(result, "unsupported_platform")
 
     result["account_handle"] = handle
-    account_url = f"https://www.tiktok.com/@{handle}"
 
     try:
         entries, account_meta = await asyncio.to_thread(
