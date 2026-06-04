@@ -100,26 +100,11 @@ async def run_source_behaviour(url: str, ydl_info: dict | None = None) -> dict:
     """Async entry point matching the run_* naming convention."""
     result = _base_result()
 
-    logger.warning(
-        "[source_behaviour] called — url=%r ydl_info_present=%s ydl_info_keys=%r",
-        url, ydl_info is not None, list((ydl_info or {}).keys())[:12],
-    )
-
     handle = _extract_tiktok_handle(url)
     if handle:
         account_url = f"https://www.tiktok.com/@{handle}"
     elif _INSTAGRAM_RE.search(url):
         if ydl_info:
-            logger.info(
-                "[source_behaviour] ydl_info fields for instagram — "
-                "uploader=%r uploader_id=%r uploader_url=%r "
-                "channel=%r channel_url=%r",
-                ydl_info.get("uploader"),
-                ydl_info.get("uploader_id"),
-                ydl_info.get("uploader_url"),
-                ydl_info.get("channel"),
-                ydl_info.get("channel_url"),
-            )
             account_url = ydl_info.get("uploader_url") or ydl_info.get("channel_url")
             handle      = ydl_info.get("uploader_id") or ydl_info.get("uploader")
             if not account_url and handle:

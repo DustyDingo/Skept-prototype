@@ -101,12 +101,6 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
     try:
         job["state"] = "ingesting"
         video_path, ydl_info = await ingest(url, workdir)
-        print(
-            f"[pipeline] ingest done — video_path={video_path!r} "
-            f"ydl_info_type={type(ydl_info).__name__} "
-            f"ydl_info_keys={list(ydl_info.keys())[:12] if ydl_info else 'EMPTY'}",
-            flush=True,
-        )
         job["state"] = "stage1"
         job["analysers"]["metadata"]          = {"status": "running"}
         job["analysers"]["source_reputation"] = {"status": "running"}
