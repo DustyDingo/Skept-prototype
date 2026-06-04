@@ -195,6 +195,8 @@ def _extract_account_info(url: str, ydl_info: dict | None = None) -> tuple:
             account_url = ydl_info.get("channel_url") or ydl_info.get("uploader_url")
             handle      = (ydl_info.get("uploader_id") or ydl_info.get("channel_id")
                            or ydl_info.get("uploader"))
+            if not account_url and handle:
+                account_url = f"https://www.instagram.com/{handle}/"
         else:
             account_url, handle = _resolve_via_video_meta(url, platform)
 
