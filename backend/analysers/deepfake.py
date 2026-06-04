@@ -61,15 +61,15 @@ async def run_deepfake(video_path: str) -> dict:
             "summary": "Frame extraction failed.",
         }
 
-    sem = asyncio.Semaphore(2)
+    results = []
+    for fp in frame_paths:
+        result = await _score_frame(fp)
+        if result is not None:
+            results.append(result)
+        await asyncio.sleep(1.0)
 
-    async def score_one(fp):
-        async with sem:
-            return await _score_frame(fp)
-
-    results = await asyncio.gather(*[score_one(fp) for fp in frame_paths])
-    valid  = [r for r in results if r is not None and "fake_prob"    in r]
-    errors = [r for r in results if r is not None and "model_error"  in r]
+    valid  = [r for r in results if "fake_prob"   in r]
+    errors = [r for r in results if "model_error" in r]
 
     if not valid:
         model_msg = errors[0]["model_error"] if errors else "all frame requests failed"
