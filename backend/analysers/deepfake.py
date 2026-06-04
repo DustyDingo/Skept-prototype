@@ -21,6 +21,7 @@ import logging
 import os
 import subprocess
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
 import replicate
@@ -28,7 +29,7 @@ import replicate
 logger = logging.getLogger(__name__)
 
 REPLICATE_MODEL = "scamai/deepfake-faceswap-detection:163f897bd0e920d375e4e67299bfc4c5eeeb8beb243d5ea9b309d1c299f562e7"
-FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "3"))
+FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "6"))
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
 
 
@@ -173,11 +174,11 @@ async def _score_frame(frame_path: str) -> dict | None:
         frame_size = Path(frame_path).stat().st_size
         logger.warning("[deepfake] scoring %r — file size=%d bytes", Path(frame_path).name, frame_size)
 
-        image_bytes = Path(frame_path).read_bytes()
+        image_data = BytesIO(Path(frame_path).read_bytes())
         output = await asyncio.to_thread(
             replicate.run,
             REPLICATE_MODEL,
-            input={"image": image_bytes},
+            input={"image": image_data},
         )
 
         logger.warning("[deepfake] raw output type=%s value=%r", type(output).__name__, output)
