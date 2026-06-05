@@ -18,8 +18,11 @@ Scoring model (50-anchored):
 """
 
 import json
+import logging
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # Platforms known to strip camera/encoder metadata during re-encoding.
@@ -207,6 +210,7 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         else:
             summary = "Multiple metadata anomalies detected. Container provenance is absent or inconsistent."
 
+    logger.info("[metadata] final pillar score: %.4f", score)
     return {
         "status":  "complete",
         "score":   score,

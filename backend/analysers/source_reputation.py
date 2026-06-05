@@ -127,6 +127,7 @@ def run_reputation(url: str, ydl_info: dict | None = None) -> dict:
         result["error"]  = str(exc)
         result["summary"] = "Source reputation analysis encountered an error."
 
+    logger.info("[source_reputation] final pillar score: %.4f", result["score"] if result.get("score") is not None else float("nan"))
     return result
 
 
