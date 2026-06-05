@@ -155,12 +155,17 @@ async def _resemble_detect(
             return None, None, None
 
         data = resp.json()
+        logger.info("[audio] Resemble raw response: %s", data)
         if not data.get("success"):
             logger.warning("[audio] Resemble success=false: %r", resp.text[:300])
             return None, None, None
 
-        metrics           = data["item"]["metrics"]
-        classifier_score  = round(float(metrics["aggregated_score"]), 4)
+        metrics          = data["item"]["metrics"]
+        raw_score        = metrics.get("aggregated_score")
+        if raw_score is None:
+            logger.warning("[audio] Resemble API returned None score — raw response: %s", data)
+            return None, None, None
+        classifier_score  = round(float(raw_score), 4)
         classifier_label  = metrics.get("label")
         classifier_segments = [float(s) for s in metrics.get("score", [])]
         return classifier_score, classifier_label, classifier_segments
