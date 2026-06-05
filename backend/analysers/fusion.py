@@ -4,6 +4,7 @@ Weighted ensemble combining analyser outputs into a final verdict band.
 
 Weights:
   - Deepfake frame analysis:     0.40 — primary detection signal
+  - Audio & voice clone:         0.20 — voice synthesis classifier + heuristics
   - C2PA (not yet in prototype): 0.22 — highest trust when present
   - Source reputation:           0.15 — durable behavioural signal
   - Source behaviour:            0.15 — account bio / cross-platform identity
@@ -19,8 +20,8 @@ Scoring model assumption:
   below 0.5 = evidence of authenticity, above 0.5 = evidence of manipulation.
   A weighted mean of all-0.5 inputs produces exactly 0.5 (amber/inconclusive),
   so absent or neutral signals correctly contribute no net push in either direction.
-  C2PA returns score=None when unavailable; it is excluded from the denominator
-  entirely so it does not dilute toward neutral.
+  C2PA and audio return score=None when unavailable; they are excluded from the
+  denominator entirely so they do not dilute toward neutral.
 """
 
 WEIGHTS = {
@@ -29,7 +30,13 @@ WEIGHTS = {
     "source_behaviour":  0.15,
     "c2pa":              0.22,
     "deepfake":          0.40,
+    "audio":             0.20,
 }
+
+# Maximum denominator when all pillars active (C2PA always None in prototype):
+# 0.08 + 0.15 + 0.15 + 0.40 + 0.20 = 0.98
+_MAX_ACTIVE_DENOM = sum(w for k, w in WEIGHTS.items() if k != "c2pa")
+print(f"[fusion] max denominator (C2PA excluded) = {_MAX_ACTIVE_DENOM:.2f}", flush=True)
 
 
 def fuse(
@@ -38,6 +45,7 @@ def fuse(
     source_behaviour: dict,
     c2pa_result: dict,
     deepfake: dict,
+    audio: dict | None = None,
 ) -> dict:
     """Combine analyser scores into a final verdict."""
     analyser_map = {
@@ -46,6 +54,7 @@ def fuse(
         "source_behaviour":  source_behaviour,
         "c2pa":              c2pa_result,
         "deepfake":          deepfake,
+        "audio":             audio or {},
     }
 
     scores        = {}

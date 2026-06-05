@@ -100,12 +100,14 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 
 ### Fusion Layer
 `analysers/fusion.py` — fixed weighted ensemble:
-- Metadata weight: 0.15
+- Metadata weight: 0.08
 - Source reputation weight: 0.15
 - Source behaviour weight: 0.15
-- Deepfake weight: 0.45
-- C2PA weight: 0.40 (reserved — stub returns `score: None`, excluded from denominator)
-- Audio weight: TBD (stub wired, implementation pending)
+- Deepfake weight: 0.40
+- Audio weight: 0.20 (librosa heuristics always active; Resemble classifier requires `RESEMBLE_API_KEY`)
+- C2PA weight: 0.22 (reserved — stub returns `score: None`, excluded from denominator)
+
+Max active denominator (C2PA always None): 0.08+0.15+0.15+0.40+0.20 = 0.98
 
 Pillars returning `score: None` are excluded from the weighted denominator entirely.
 Pillars returning `score: 0.50` contribute dead weight — architectural decision pending on
@@ -127,10 +129,10 @@ whether to treat exactly-neutral scores the same as None.
 | Source behaviour & bio | ✅ Active (partial) | Bio link check only; 0.50 when no data |
 | C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1 |
 | Frame-level deepfake | ✅ Active | Replicate live, sequential scoring, high-variance detection |
-| Audio & voice clone | ⏳ Not implemented | Stub wired; `REPLICATE_API_TOKEN` set; next priority |
+| Audio & voice clone | ✅ Active (partial) | librosa heuristics always run; Resemble AI classifier requires `RESEMBLE_API_KEY`; weight 0.20 |
 | Pixel-level forensics | ⏳ Not wired | Backlog |
 
-**Active fusion pillars: 4/7**
+**Active fusion pillars: 5/7**
 
 ---
 
@@ -143,7 +145,7 @@ further implementation or data access.
 |---|---|---|
 | Source reputation depth (Instagram) | Only username digit-ratio fires; account-page bypassed to avoid 429s | Explore `--flat-playlist` on account URL for cadence signals |
 | Bio link resolution | Aggregator URLs detected but not resolved to individual platforms | Decide resolution depth; check if yt-dlp `info_dict` exposes bio URL |
-| Audio pillar | Stub wired, token set, no scoring logic | Implement — next dev session priority |
+| Audio heuristic calibration | Pitch/flatness/ZCR thresholds are hand-tuned; no ground-truth validation yet | Calibrate against known TTS samples once live on real clips |
 | Frame sampler scene-blind | Uniform sampling misses cut-points; split-screen reels produce high-variance sets | Phase 1: ffmpeg `select='gt(scene,0.4)'` scene-change sampler |
 | C2PA | Stub by design; weight reserved | Phase 1: c2pa-rs implementation |
 
@@ -196,12 +198,13 @@ further implementation or data access.
 
 ## Roadmap (near-term priorities)
 
-1. **Audio pillar implementation** — stub wired, token set; implement scoring logic via Replicate
-2. **YouTube ingestion fix** — Phase B production solution (bgutil PO token + proxy)
-3. **Scene-change-aware frame sampler** — replace uniform interval with ffmpeg scene-detection
-4. **Source reputation signal depth** — explore `--flat-playlist` for Instagram cadence signals
-5. **C2PA manifest integration** — Phase 1 watermarking bridge standard (c2pa-rs)
-6. **Share sheet registration** — iOS Share Extension + Android intent filter
+1. **YouTube ingestion fix** — Phase B production solution (bgutil PO token + proxy)
+2. **Scene-change-aware frame sampler** — replace uniform interval with ffmpeg scene-detection
+3. **Resemble AI classifier activation** — add `RESEMBLE_API_KEY` to Railway; audio pillar heuristics already live
+4. **Audio heuristic calibration** — validate pitch/flatness/ZCR thresholds against real TTS samples
+5. **Source reputation signal depth** — explore `--flat-playlist` for Instagram cadence signals
+6. **C2PA manifest integration** — Phase 1 watermarking bridge standard (c2pa-rs)
+7. **Share sheet registration** — iOS Share Extension + Android intent filter
 
 ---
 
