@@ -165,7 +165,6 @@ async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
                 "merge_output_format": "mp4",
                 "noplaylist":          True,
                 "quiet":               True,
-                "impersonate":         "chrome",
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=True) or {}
