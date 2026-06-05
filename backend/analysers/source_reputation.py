@@ -256,11 +256,13 @@ def _compute_signals(posts: list, account_meta: dict, handle: Optional[str] = No
     dates = [d for d in (_parse_date(p) for p in posts) if d]
     dates.sort()
 
+    if posts:
+        signals["post_count_fetched"] = len(posts)
+
     if dates:
         signals["oldest_post_age_days"] = (now - dates[0]).days
         signals["newest_post_age_days"] = (now - dates[-1]).days
         signals["account_age_days_min"] = signals["oldest_post_age_days"]
-        signals["post_count_fetched"]   = len(posts)
 
         window_days = max(signals["account_age_days_min"], 1)
         signals["cadence_posts_per_day"] = round(len(posts) / window_days, 3)
