@@ -137,6 +137,9 @@ async def run_deepfake(video_path: str) -> dict:
             f"{len(high_conf)} frame(s) above high-confidence threshold."
         )
 
+    logger.error(
+        "[deepfake] final pillar score: %.4f (mean of %d frames)", mean_fake, len(valid)
+    )
     return {
         "status": "complete",
         "score": mean_fake,
@@ -276,7 +279,7 @@ def _parse_fake_prob(output) -> float | None:
     except (TypeError, ValueError):
         pass
 
-    return 0.5
+    return None
 
 
 def _no_token_result() -> dict:
