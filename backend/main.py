@@ -47,6 +47,8 @@ else:
     INSTAGRAM_COOKIES_PATH = None
     logger.info("[ingest] INSTAGRAM_COOKIES_B64 not set — Instagram ingestion may fail on auth-gated Reels")
 
+print(f"[ingest] cookie path: {INSTAGRAM_COOKIES_PATH}", flush=True)
+
 jobs: dict[str, dict] = {}
 
 @asynccontextmanager
@@ -192,8 +194,15 @@ async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
             }
             if INSTAGRAM_COOKIES_PATH is not None and "instagram.com" in url:
                 opts["cookiefile"] = INSTAGRAM_COOKIES_PATH
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                return ydl.extract_info(url, download=True) or {}
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(url, download=True) or {}
+            except AssertionError:
+                # curl-cffi impersonate target unavailable in this build — retry without
+                logger.warning("[ingest] impersonate=chrome raised AssertionError; retrying without impersonation")
+                opts.pop("impersonate", None)
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(url, download=True) or {}
 
         ydl_info = await asyncio.to_thread(_download)
 
