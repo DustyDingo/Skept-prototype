@@ -2,7 +2,7 @@
 analysers/audio.py — Audio & Voice Clone Detection
 
 Two sub-signals fused within the pillar:
-  1. Resemble AI Detect API v2 (classifier) — requires RESEMBLE_API_KEY
+  1. Resemble AI Detect API v2 (classifier) — requires RESEMBLE_API_TOKEN
   2. Local librosa heuristics (pitch variance, spectral flatness, ZCR variance)
      — runs when audio is extractable; degrades gracefully if librosa absent
 
@@ -29,7 +29,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-RESEMBLE_API_KEY  = os.getenv("RESEMBLE_API_KEY")
+RESEMBLE_API_TOKEN = os.getenv("RESEMBLE_API_TOKEN")
 RESEMBLE_ENDPOINT = "https://app.resemble.ai/api/v2/detect"
 
 
@@ -134,7 +134,7 @@ async def analyse(video_path: str) -> dict:
 async def _resemble_detect(
     audio_path: str,
 ) -> tuple[float | None, str | None, list | None]:
-    if not RESEMBLE_API_KEY:
+    if not RESEMBLE_API_TOKEN:
         return None, None, None
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -142,7 +142,7 @@ async def _resemble_detect(
                 resp = await client.post(
                     RESEMBLE_ENDPOINT,
                     headers={
-                        "Authorization": f"Bearer {RESEMBLE_API_KEY}",
+                        "Authorization": f"Bearer {RESEMBLE_API_TOKEN}",
                         "Prefer":        "wait",
                     },
                     files={"file": ("audio.wav", f, "audio/wav")},
@@ -220,7 +220,7 @@ def _build_signals(
     signals = []
 
     # Classifier row
-    if RESEMBLE_API_KEY:
+    if RESEMBLE_API_TOKEN:
         if classifier_score is not None:
             label_suffix = f" ({classifier_label})" if classifier_label else ""
             signals.append({
