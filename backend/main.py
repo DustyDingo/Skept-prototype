@@ -196,7 +196,10 @@ async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
             if INSTAGRAM_COOKIES_PATH is not None and "instagram.com" in url:
                 opts["cookiefile"] = INSTAGRAM_COOKIES_PATH
             with yt_dlp.YoutubeDL(opts) as ydl:
-                return ydl.extract_info(url, download=True) or {}
+                info = ydl.extract_info(url, download=True)
+            if not info:
+                raise ValueError("yt-dlp returned empty result")
+            return info
 
         ydl_info = await asyncio.to_thread(_download)
 
