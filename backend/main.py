@@ -169,7 +169,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["verdict"] = verdict
         job["state"] = "complete"
     except Exception as e:
-        logger.error(f"[ingest] yt-dlp failed for {url}: {e}")
+        logger.error(f"[ingest] yt-dlp failed for {url}: {type(e).__name__}: {e!r}")
         job["state"] = "error"
         job["error"] = str(e)
 
