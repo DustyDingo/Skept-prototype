@@ -30,15 +30,19 @@ from analysers.audio import analyse as analyse_audio
 
 logger = logging.getLogger(__name__)
 
-_cookies_b64 = os.getenv("INSTAGRAM_COOKIES_B64")
-if _cookies_b64:
-    _tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
-    _tmp.write(base64.b64decode(_cookies_b64))
-    _tmp.flush()
-    _tmp.close()
-    INSTAGRAM_COOKIES_PATH = _tmp.name
-    atexit.register(os.unlink, INSTAGRAM_COOKIES_PATH)
-    logger.info("[ingest] Instagram cookies loaded from INSTAGRAM_COOKIES_B64")
+_cookie_b64 = os.getenv("INSTAGRAM_COOKIES_B64")
+if _cookie_b64:
+    try:
+        _f = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+        _f.write(base64.b64decode(_cookie_b64))
+        _f.flush()
+        _f.close()
+        INSTAGRAM_COOKIES_PATH = _f.name
+        atexit.register(os.unlink, INSTAGRAM_COOKIES_PATH)
+        logger.info("[ingest] Instagram cookies loaded from INSTAGRAM_COOKIES_B64")
+    except Exception as _e:
+        INSTAGRAM_COOKIES_PATH = None
+        logger.warning(f"[ingest] Failed to decode INSTAGRAM_COOKIES_B64: {_e!r}")
 else:
     INSTAGRAM_COOKIES_PATH = None
     logger.info("[ingest] INSTAGRAM_COOKIES_B64 not set — Instagram ingestion may fail on auth-gated Reels")
