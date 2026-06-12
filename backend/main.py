@@ -4,6 +4,9 @@ Frontend HTML is embedded directly to avoid Docker path issues.
 """
 
 import asyncio
+import atexit
+import base64
+import logging
 import os
 import uuid
 import tempfile
@@ -24,6 +27,21 @@ from analysers.source_reputation import run_reputation
 from analysers.source_behaviour import run_source_behaviour
 from analysers.c2pa import run_c2pa
 from analysers.audio import analyse as analyse_audio
+
+logger = logging.getLogger(__name__)
+
+_cookies_b64 = os.getenv("INSTAGRAM_COOKIES_B64")
+if _cookies_b64:
+    _tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+    _tmp.write(base64.b64decode(_cookies_b64))
+    _tmp.flush()
+    _tmp.close()
+    INSTAGRAM_COOKIES_PATH = _tmp.name
+    atexit.register(os.unlink, INSTAGRAM_COOKIES_PATH)
+    logger.info("[ingest] Instagram cookies loaded from INSTAGRAM_COOKIES_B64")
+else:
+    INSTAGRAM_COOKIES_PATH = None
+    logger.info("[ingest] INSTAGRAM_COOKIES_B64 not set — Instagram ingestion may fail on auth-gated Reels")
 
 jobs: dict[str, dict] = {}
 
@@ -151,6 +169,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["verdict"] = verdict
         job["state"] = "complete"
     except Exception as e:
+        logger.error(f"[ingest] yt-dlp failed for {url}: {e}")
         job["state"] = "error"
         job["error"] = str(e)
 
@@ -167,6 +186,8 @@ async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
                 "quiet":               True,
                 "impersonate":         "chrome",
             }
+            if INSTAGRAM_COOKIES_PATH is not None and "instagram.com" in url:
+                opts["cookiefile"] = INSTAGRAM_COOKIES_PATH
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=True) or {}
 
