@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 import aiofiles
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
 from analysers.metadata import run_metadata
 from analysers.deepfake import run_deepfake
@@ -192,7 +193,7 @@ async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
                 "quiet":               True,
             }
             if "tiktok.com" in url:
-                opts["impersonate"] = "chrome"
+                opts["impersonate"] = ImpersonateTarget("chrome")
             if INSTAGRAM_COOKIES_PATH is not None and "instagram.com" in url:
                 opts["cookiefile"] = INSTAGRAM_COOKIES_PATH
             with yt_dlp.YoutubeDL(opts) as ydl:
