@@ -190,19 +190,13 @@ async def ingest(url: str | None, workdir: str) -> tuple[str, dict]:
                 "merge_output_format": "mp4",
                 "noplaylist":          True,
                 "quiet":               True,
-                "impersonate":         "chrome",
             }
+            if "tiktok.com" in url:
+                opts["impersonate"] = "chrome"
             if INSTAGRAM_COOKIES_PATH is not None and "instagram.com" in url:
                 opts["cookiefile"] = INSTAGRAM_COOKIES_PATH
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    return ydl.extract_info(url, download=True) or {}
-            except AssertionError:
-                # curl-cffi impersonate target unavailable in this build — retry without
-                logger.warning("[ingest] impersonate=chrome raised AssertionError; retrying without impersonation")
-                opts.pop("impersonate", None)
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    return ydl.extract_info(url, download=True) or {}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=True) or {}
 
         ydl_info = await asyncio.to_thread(_download)
 
