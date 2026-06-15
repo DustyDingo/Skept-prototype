@@ -94,7 +94,7 @@ async def analyse(video_path: str) -> dict:
             low_confidence = True
 
         if score is not None:
-            score = max(0.0, min(1.0, score))
+            score = max(0.15, min(1.0, score))
 
         signals = _build_signals(
             classifier_score, classifier_label,
@@ -169,7 +169,8 @@ async def _resemble_detect(
             if raw_score is None:
                 logger.warning("[audio] Resemble returned None score — falling through to heuristics")
                 return None, None, None
-            classifier_score    = round(float(raw_score), 4)
+            resemble_suspicion  = (float(raw_score) + 1.0) / 2.0
+            classifier_score    = round(max(0.0, min(1.0, resemble_suspicion)), 4)
             classifier_label    = metrics.get("label")
             classifier_segments = [float(s) for s in metrics.get("score", []) if s is not None]
             return classifier_score, classifier_label, classifier_segments
