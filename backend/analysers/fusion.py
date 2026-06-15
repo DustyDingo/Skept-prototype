@@ -67,6 +67,7 @@ def fuse(
             score = analyser.get("score")
             if score is None:
                 continue
+            score         = max(0.0, min(1.0, score))
             scores[key]   = score
             weighted_sum += score * weight
             total_weight += weight

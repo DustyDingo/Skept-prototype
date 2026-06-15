@@ -93,6 +93,9 @@ async def analyse(video_path: str) -> dict:
             score          = None
             low_confidence = True
 
+        if score is not None:
+            score = max(0.0, min(1.0, score))
+
         signals = _build_signals(
             classifier_score, classifier_label,
             pitch_score, flatness_score, zcr_score,
@@ -202,7 +205,7 @@ def _librosa_heuristics(
     # Spectral flatness: high mean → noise-like → suspicious → higher score
     flatness        = librosa.feature.spectral_flatness(y=y)
     mean_flatness   = float(np.mean(flatness))
-    flatness_score  = round(min(1.0, mean_flatness * 20.0), 3)
+    flatness_score  = round(max(0.0, min(1.0, mean_flatness * 20.0)), 3)
 
     # ZCR variance: low variance → unnaturally consistent → suspicious → higher score
     zcr          = librosa.feature.zero_crossing_rate(y)
