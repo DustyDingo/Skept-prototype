@@ -74,6 +74,22 @@ async def run_deepfake(video_path: str) -> dict:
     errors = [r for r in results if "model_error" in r]
 
     if not valid:
+        all_no_face = errors and all(
+            "no face" in r.get("model_error", "").lower()
+            for r in errors
+        )
+        if all_no_face:
+            return {
+                "status":        "skipped",
+                "score":         None,
+                "skip_reason":   "no_face_detected",
+                "error":         None,
+                "signals":       [],
+                "summary":       "No faces detected in any sampled frame — faceswap analysis not applicable.",
+                "model":         REPLICATE_MODEL,
+                "frames_sampled": 0,
+                "high_variance": False,
+            }
         model_msg = errors[0]["model_error"] if errors else "all frame requests failed"
         return {
             "status":  "error",
