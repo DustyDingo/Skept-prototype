@@ -73,7 +73,7 @@ async def run_deepfake(video_path: str) -> dict:
     valid  = [r for r in results if "fake_prob"   in r]
     errors = [r for r in results if "model_error" in r]
 
-    if not valid:
+    if len(valid) == 0:
         all_no_face = errors and all(
             "no face" in r.get("model_error", "").lower()
             for r in errors
