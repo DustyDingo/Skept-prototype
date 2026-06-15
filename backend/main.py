@@ -164,10 +164,10 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["analysers"]["metadata"]          = meta_result
         job["analysers"]["source_reputation"] = rep_result
         job["analysers"]["source_behaviour"]  = beh_result
-        if c2pa_result.get("status") == "skipped" or c2pa_result.get("score") is None:
+        if not c2pa_result.get("status") or c2pa_result.get("score") is None:
             c2pa_result["status"] = "skipped"
-        logger.info("[pipeline] c2pa stage1: status=%r — propagated to job tracker and sidebar", c2pa_result["status"])
         job["analysers"]["c2pa"]              = c2pa_result
+        logger.warning("[pipeline] c2pa written to job: %r", c2pa_result)
         job["analysers"]["audio"]             = audio_result
 
         job["state"] = "stage2"
