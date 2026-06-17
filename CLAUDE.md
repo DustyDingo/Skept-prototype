@@ -80,6 +80,7 @@ Score uses soft ceiling of 0.65 — metadata alone cannot return a fully manipul
 `analysers/deepfake.py` — extracts N evenly-spaced frames, sends each to Replicate sequentially
 with 1s delay between requests (avoids burst-limit 429s).
 Returns mean, peak, high-confidence frame count, and `high_variance` flag.
+Frame confidence scalar applied before score exits analyser: `frame_confidence = len(valid_scores) / total_frames_sampled`. Pillar score multiplied by scalar — prevents a single high-probability frame carrying full fusion weight. `frame_confidence` included in returned dict. For non-human-subject content (e.g. animal videos), scalar will suppress score toward authentic because the faceswap model rarely detects human faces in animal-subject frames — expected behaviour; Phase 1 content-type guard queued.
 
 `high_variance=True` when `stdev(frame_scores) > 0.25` — indicates split-screen or multi-subject
 content where the faceswap model may be firing on scene cuts rather than actual manipulation.
@@ -104,7 +105,7 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 - Source reputation weight: 0.15
 - Source behaviour weight: 0.15
 - Deepfake weight: 0.40
-- Audio weight: 0.20 (librosa heuristics always active; Resemble classifier requires `RESEMBLE_API_KEY`)
+- Audio weight: 0.20 (Resemble AI voice clone classifier primary; librosa heuristics fallback)
 - C2PA weight: 0.22 (reserved — stub returns `score: None`, excluded from denominator)
 
 Max active denominator (C2PA always None): 0.08+0.15+0.15+0.40+0.20 = 0.98
@@ -129,7 +130,7 @@ whether to treat exactly-neutral scores the same as None.
 | Source behaviour & bio | ✅ Active (partial) | Bio link check only; 0.50 when no data |
 | C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1 |
 | Frame-level deepfake | ✅ Active | Replicate live, sequential scoring, high-variance detection |
-| Audio & voice clone | ✅ Active (partial) | librosa heuristics always run; Resemble AI classifier requires `RESEMBLE_API_KEY`; weight 0.20 |
+| Audio & voice clone | ✅ Active (partial) | Resemble AI voice clone classifier active; librosa heuristics fallback; weight 0.20 |
 | Pixel-level forensics | ⏳ Not wired | Backlog |
 
 **Active fusion pillars: 5/7**
@@ -148,6 +149,7 @@ further implementation or data access.
 | Audio heuristic calibration | Pitch/flatness/ZCR thresholds are hand-tuned; no ground-truth validation yet | Calibrate against known TTS samples once live on real clips |
 | Frame sampler scene-blind | Uniform sampling misses cut-points; split-screen reels produce high-variance sets | Phase 1: ffmpeg `select='gt(scene,0.4)'` scene-change sampler |
 | C2PA | Stub by design; weight reserved | Phase 1: c2pa-rs implementation |
+| Deepfake — non-human content | Faceswap model has no meaningful signal on animal-subject content; frame confidence scalar suppresses score toward authentic correctly but evidence card does not communicate the limitation | Phase 1: content-type guard — if ≤1 frame scores a human face, set `content_type: non_human` and render pillar as "no human face detected — result not meaningful" |
 
 ---
 
@@ -198,13 +200,14 @@ further implementation or data access.
 
 ## Roadmap (near-term priorities)
 
-1. **YouTube ingestion fix** — Phase B production solution (bgutil PO token + proxy)
-2. **Scene-change-aware frame sampler** — replace uniform interval with ffmpeg scene-detection
-3. **Resemble AI classifier activation** — add `RESEMBLE_API_KEY` to Railway; audio pillar heuristics already live
-4. **Audio heuristic calibration** — validate pitch/flatness/ZCR thresholds against real TTS samples
-5. **Source reputation signal depth** — explore `--flat-playlist` for Instagram cadence signals
-6. **C2PA manifest integration** — Phase 1 watermarking bridge standard (c2pa-rs)
-7. **Share sheet registration** — iOS Share Extension + Android intent filter
+1. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate model scouting required before dev session opens
+2. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
+3. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
+4. **YouTube ingestion fix** — Phase B production solution (bgutil PO token + proxy)
+5. **Scene-change-aware frame sampler** — replace uniform interval with ffmpeg scene-detection
+6. **Source reputation signal depth** — explore `--flat-playlist` for Instagram cadence signals
+7. **C2PA manifest integration** — Phase 1 watermarking bridge standard (c2pa-rs)
+8. **Share sheet registration** — iOS Share Extension + Android intent filter
 
 ---
 
@@ -242,12 +245,12 @@ Body font: Calibri
 | Document | Version | Purpose |
 |---|---|---|
 | Project Brief | v0.19 | Master product spec |
-| Engineers Brief | v0.10 | Architecture and build specs |
+| Engineers Brief | v0.13 | Architecture and build specs |
 | Legal Brief | v0.8 | Attorney reference |
 | Trademark Clearance Brief | v0.3 | Filing strategy |
 
 Cross-references and brief updates managed through `v19-consolidation-checklist.md`.
-Next Engineers Brief target: v0.11 (calibration gaps fold-in — see §3.18).
+Next Engineers Brief target: v0.14 (non-human content guard and next accumulation — see §3.24 in consolidation checklist).
 
 ---
 
