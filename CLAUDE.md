@@ -57,6 +57,8 @@ App served at `http://localhost:8000`. No separate frontend build step.
 | `HF_TOKEN` | Optional | HuggingFace API token — not currently used for active scoring |
 | `SKEPT_FRAMES` | Optional | Frames sampled per video (default: 6) |
 | `REPLICATE_API_TOKEN` | Required | Deepfake frame scoring active; audio pillar will use same token once implemented |
+| `RESEMBLE_API_TOKEN` | Required | Audio voice clone classifier (Resemble AI); falls back to librosa heuristics if missing or 402 |
+| `INSTAGRAM_COOKIES_B64` | Optional | Base64-encoded Netscape cookie file; decoded to NamedTemporaryFile at startup for Instagram ingestion |
 
 ---
 
@@ -98,6 +100,25 @@ survive. Source reputation is the most durable detection layer at scale.
 `analysers/source_behaviour.py` — bio cross-platform link check and cadence signals.
 Bio link aggregator URLs detected but not resolved to individual platform URLs.
 Returns exactly 0.50 when no actionable signal found — contributes no directional information.
+
+### Stage 5 — Audio & Voice Clone
+`analysers/audio.py` — two-path scoring model:
+- **Primary path:** Resemble AI voice clone classifier via `RESEMBLE_API_TOKEN`. Raw score converted: `suspicion = (raw + 1.0) / 2.0`. Sub-scores and final pillar score clamped to [0.0, 1.0]. Minimum composite floor: 0.15 (prevents audio zeroing the pillar on definitively-real content).
+- **Fallback path:** librosa heuristics (pitch variance, spectral flatness, ZCR variance) when Resemble unavailable or returns 402.
+- Weight: 0.20. Fusion denominator: 0.98 (C2PA excluded).
+
+**Observability gap (§3.28):** `audio.py` currently emits no per-job log lines. Resemble HTTP status, raw score, path taken, and librosa sub-scores are invisible in Railway logs — inferred from UI evidence card only. Fix queued.
+
+### Stage 6 — Subject Identity (Phase 1, NLP)
+`analysers/subject_identity.py` — spaCy NER on video metadata, cross-referenced against Wikidata list.
+- **Startup fetch:** `analysers/subject_list.py` queries Wikidata SPARQL at startup for current heads of state/government (AU/US/UK/EU) and major party leaders. Stored as module-level `SUBJECT_LIST: list[str]`. Degrades to empty list on failure — subject identity runs silent, not as error.
+- **Hashtag pre-processing:** `#hashtag` tokens extracted from metadata, stripped of `#`, segmented via `wordninja.split()` before NER. Required for TikTok content where subject names appear only in hashtags (e.g. `#presidentdonaldtrump` → `['president', 'donald', 'trump']`).
+- **NER:** spaCy `en_core_web_sm`. PERSON entities cross-referenced against SUBJECT_LIST via case-insensitive substring match (both directions).
+- **Output:** `subject_identity` key on top-level job result dict — always present. `matched: bool`, `matched_name: str | None`, `ner_entities: list[str]`, `source: "metadata_nlp"`.
+- **Score contribution:** Flag only — not a fusion input, not in denominator.
+- **Evidence card:** Standalone silent row — renders amber/caution when `matched=True`, hidden when `matched=False`.
+
+**Observability gap (§3.29):** No `[subject_identity]` log line emitted. Cannot confirm from Railway logs whether the function ran, Wikidata list populated, or NER entities were extracted. Fix queued.
 
 ### Fusion Layer
 `analysers/fusion.py` — fixed weighted ensemble:
@@ -150,6 +171,8 @@ further implementation or data access.
 | Frame sampler scene-blind | Uniform sampling misses cut-points; split-screen reels produce high-variance sets | Phase 1: ffmpeg `select='gt(scene,0.4)'` scene-change sampler |
 | C2PA | Stub by design; weight reserved | Phase 1: c2pa-rs implementation |
 | Deepfake — non-human content | Faceswap model has no meaningful signal on animal-subject content; frame confidence scalar suppresses score toward authentic correctly but evidence card does not communicate the limitation | Phase 1: content-type guard — if ≤1 frame scores a human face, set `content_type: non_human` and render pillar as "no human face detected — result not meaningful" |
+| Audio — Resemble fallback | `RESEMBLE_API_TOKEN` missing from Railway Variables causes librosa-only path; minimum floor 0.15 clamps result; Resemble HTTP status invisible in logs (§3.28) | Add RESEMBLE_API_TOKEN to Railway Variables; add per-job audio logging |
+| Deepfake — per-frame latency | Observed ~26s/frame on Replicate (expected 2–4s); consistent across runs suggesting CPU path or Replicate queuing rather than GPU (§3.25) | Check Replicate dashboard for prediction logs; add timing instrumentation to deepfake.py |
 
 ---
 
@@ -158,6 +181,7 @@ further implementation or data access.
 | Blocker | Detail | Fix |
 |---|---|---|
 | YouTube ingestion | Bot detection blocks yt-dlp on some clips | Phase A workaround: `--extractor-args "youtube:player_client=android"`; Phase B: bgutil PO token plugin + residential proxy |
+| Audio logging blind spot | `audio.py` and `fusion.py` emit no per-job log lines — scores visible in UI but intermediate computation invisible in Railway logs | Add per-job [audio] and [fusion] log lines (§3.28) |
 
 ---
 
@@ -200,14 +224,15 @@ further implementation or data access.
 
 ## Roadmap (near-term priorities)
 
-1. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate model scouting required before dev session opens
-2. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
-3. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
-4. **YouTube ingestion fix** — Phase B production solution (bgutil PO token + proxy)
-5. **Scene-change-aware frame sampler** — replace uniform interval with ffmpeg scene-detection
-6. **Source reputation signal depth** — explore `--flat-playlist` for Instagram cadence signals
-7. **C2PA manifest integration** — Phase 1 watermarking bridge standard (c2pa-rs)
-8. **Share sheet registration** — iOS Share Extension + Android intent filter
+1. **Logging instrumentation** — add per-job [audio], [fusion], and [subject_identity] log lines (§3.28, §3.29); unblocks diagnosis without UI reconstruction
+2. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate scouting complete — no Replicate model available; Sightengine API is best current option
+3. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
+4. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
+5. **YouTube ingestion fix** — Phase B production solution (bgutil PO token + proxy)
+6. **Scene-change-aware frame sampler** — replace uniform interval with ffmpeg scene-detection
+7. **Source reputation signal depth** — explore `--flat-playlist` for Instagram cadence signals
+8. **C2PA manifest integration** — Phase 1 watermarking bridge standard (c2pa-rs)
+9. **Share sheet registration** — iOS Share Extension + Android intent filter
 
 ---
 
@@ -250,7 +275,7 @@ Body font: Calibri
 | Trademark Clearance Brief | v0.3 | Filing strategy |
 
 Cross-references and brief updates managed through `v19-consolidation-checklist.md`.
-Next Engineers Brief target: v0.14 (non-human content guard and next accumulation — see §3.24 in consolidation checklist).
+Next Engineers Brief target: v0.14 (§3.24 non-human content guard; §3.25 latency; §3.26 faceswap false negative; §3.28/§3.29 logging gaps; §3.21/§3.27 subject identity + hashtag fix — see consolidation checklist).
 
 ---
 
