@@ -12,6 +12,7 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o 
 WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m spacy download en_core_web_sm
 
 COPY backend/ .
 
