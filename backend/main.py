@@ -152,6 +152,8 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
                 asyncio.to_thread(run_c2pa, video_path),
                 analyse_audio(video_path),
             )
+            if not c2pa_result.get("status") or c2pa_result.get("score") is None:
+                c2pa_result["status"] = "skipped"
         else:
             meta_result, c2pa_result, audio_result = await asyncio.gather(
                 asyncio.to_thread(run_metadata, video_path, ""),
