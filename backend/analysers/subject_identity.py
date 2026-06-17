@@ -5,6 +5,7 @@ against the Wikidata subject list fetched at startup.
 """
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,13 @@ try:
 except Exception as _e:
     _nlp = None
     logger.warning("[subject_identity] spaCy unavailable — subject detection disabled: %s", _e)
+
+try:
+    import wordninja as _wordninja
+    _HAS_WORDNINJA = True
+except Exception as _e:
+    _HAS_WORDNINJA = False
+    logger.warning("[subject_identity] wordninja unavailable — hashtag splitting disabled: %s", _e)
 
 _EMPTY = {"matched": False, "matched_name": None, "ner_entities": [], "source": "metadata_nlp"}
 
@@ -43,6 +51,12 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
         tags_str = str(tags)
 
     text = " ".join(filter(None, [title, description, tags_str]))
+
+    hashtags = re.findall(r'#(\w+)', text)
+    if hashtags and _HAS_WORDNINJA:
+        segmented = " ".join(" ".join(_wordninja.segment(tag)) for tag in hashtags)
+        text = text + " " + segmented
+
     if not text.strip():
         return dict(_EMPTY)
 

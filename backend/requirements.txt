@@ -12,3 +12,4 @@ c2pa-python>=0.32.6
 librosa>=0.10.0
 requests>=2.32.0
 spacy>=3.7.0
+wordninja
