@@ -54,7 +54,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
 
     hashtags = re.findall(r'#(\w+)', text)
     if hashtags and _HAS_WORDNINJA:
-        segmented = " ".join(" ".join(_wordninja.segment(tag)) for tag in hashtags)
+        segmented = " ".join(" ".join(_wordninja.split(tag)) for tag in hashtags)
         text = text + " " + segmented
 
     if not text.strip():
