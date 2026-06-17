@@ -104,6 +104,9 @@ async def run_deepfake(video_path: str) -> dict:
     max_fake = round(max(fake_probs), 3)
     high_conf = [r for r in valid if r["fake_prob"] > 0.7]
 
+    frame_confidence = round(len(valid) / len(frame_paths), 3)
+    score = round(mean_fake * frame_confidence, 3)
+
     std_dev = statistics.stdev(fake_probs) if len(fake_probs) > 1 else 0.0
     high_variance = std_dev > 0.25
 
@@ -111,6 +114,12 @@ async def run_deepfake(video_path: str) -> dict:
         {
             "label": "Frames analysed",
             "value": f"{len(valid)} of {len(frame_paths)} sampled",
+            "weight": "info",
+            "suspicious": False,
+        },
+        {
+            "label": "Frame confidence",
+            "value": f"{frame_confidence:.0%}",
             "weight": "info",
             "suspicious": False,
         },
@@ -154,15 +163,17 @@ async def run_deepfake(video_path: str) -> dict:
         )
 
     logger.error(
-        "[deepfake] final pillar score: %.4f (mean of %d frames)", mean_fake, len(valid)
+        "[deepfake] final pillar score: %.4f (mean=%.4f * confidence=%.3f, %d/%d frames)",
+        score, mean_fake, frame_confidence, len(valid), len(frame_paths),
     )
     return {
         "status": "complete",
-        "score": mean_fake,
+        "score": score,
         "signals": signals,
         "summary": summary,
         "model": REPLICATE_MODEL,
         "frames_sampled": len(valid),
+        "frame_confidence": frame_confidence,
         "high_variance": high_variance,
     }
 
