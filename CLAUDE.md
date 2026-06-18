@@ -117,7 +117,7 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 - **Score contribution:** Flag only — not a fusion input, not in denominator.
 - **Evidence card:** Standalone silent row — renders amber/caution when `matched=True`, hidden when `matched=False`.
 
-**Observability gap (§3.29):** No `[subject_identity]` log line emitted. Cannot confirm from Railway logs whether the function ran, Wikidata list populated, or NER entities were extracted. Fix queued.
+**Observability (§3.29 resolved):** `subject_list.py` now prints Wikidata fetch OK/FAILED with name count at startup. `subject_identity.py` now prints list_size, ner_entities, matched, and name at every return point (18 Jun 2026).
 
 ### Fusion Layer
 `analysers/fusion.py` — fixed weighted ensemble:
@@ -223,7 +223,7 @@ further implementation or data access.
 
 ## Roadmap (near-term priorities)
 
-1. **Logging instrumentation** — add per-job [subject_identity] log line (§3.29); audio and fusion logging resolved (§3.28 closed 18 Jun 2026)
+1. **Logging instrumentation** — ✅ complete — [audio], [fusion], and [subject_identity] per-job log lines all resolved (§3.28 closed 18 Jun 2026, §3.29 closed 18 Jun 2026)
 2. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate scouting complete — no Replicate model available; Sightengine API is best current option
 3. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
 4. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
@@ -274,7 +274,7 @@ Body font: Calibri
 | Trademark Clearance Brief | v0.3 | Filing strategy |
 
 Cross-references and brief updates managed through `v19-consolidation-checklist.md`.
-Next Engineers Brief target: v0.14 (§3.24 non-human content guard; §3.25 latency; §3.26 faceswap false negative; §3.28/§3.29 logging gaps; §3.21/§3.27 subject identity + hashtag fix — see consolidation checklist).
+Next Engineers Brief target: v0.14 (§3.24 non-human content guard; §3.25 latency resolved; §3.26 faceswap false negative; §3.28/§3.29 logging resolved; §3.21/§3.27 subject identity + hashtag fix — see consolidation checklist).
 
 ---
 
