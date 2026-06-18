@@ -145,12 +145,12 @@ whether to treat exactly-neutral scores the same as None.
 
 | Pillar | Status | Notes |
 |---|---|---|
-| Metadata & container forensics | ✅ Active | NTSC fps fix deployed |
-| Source reputation | ✅ Active (partial) | Instagram: 1/5 signals; low-confidence badge shown |
-| Source behaviour & bio | ✅ Active (partial) | Bio link check only; 0.50 when no data |
-| C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1 |
-| Frame-level deepfake | ✅ Active | Replicate live, sequential scoring, high-variance detection |
-| Audio & voice clone | ✅ Active (partial) | Resemble AI voice clone classifier active; librosa heuristics fallback; weight 0.20 |
+| Metadata & container forensics | ✅ Active | NTSC fps fix deployed. §3.30: authentic-leaning branches clamped to 0.5; no positive verification mechanism in Phase 0/1. |
+| Source reputation | ✅ Active (partial) | Instagram: 1/5 signals; low-confidence badge shown. §3.30: `low_sample=True` → score 0.5 neutral; established history → authentic lean permissible. |
+| Source behaviour & bio | ✅ Active (partial) | Bio link check only. §3.30: returns 0.5 on no signal — confirmed correct. |
+| C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1. §3.30: no change — already excluded when stubbed. |
+| Frame-level deepfake | ✅ Active | Replicate live, concurrent scoring (asyncio.gather), high-variance detection. §3.30: min 2/N frames for score contribution; below threshold → `status=low_coverage`, `score=None`, excluded from fusion. All-no-face → `status=no_face`, `score=None`, excluded (§3.24 content-type guard). 0.75 asymmetric floor removed — raw scalar `len(valid)/len(frame_paths)` now applies. |
+| Audio & voice clone | ✅ Active (partial) | Resemble AI voice clone classifier active; librosa heuristics fallback; weight 0.20. §3.30: Resemble AI path → authentic lean permissible; librosa-only fallback → score 0.5 neutral; 0.15 minimum floor removed. |
 | Pixel-level forensics | ⏳ Not wired | Backlog |
 
 **Active fusion pillars: 5/7**
@@ -172,6 +172,8 @@ further implementation or data access.
 | Deepfake — non-human content | Faceswap model has no meaningful signal on animal-subject content; frame confidence scalar suppresses score toward authentic correctly but evidence card does not communicate the limitation | Phase 1: content-type guard — if ≤1 frame scores a human face, set `content_type: non_human` and render pillar as "no human face detected — result not meaningful" |
 | Audio — Resemble fallback | `RESEMBLE_API_TOKEN` missing from Railway Variables causes librosa-only path; minimum floor 0.15 clamps result | Add RESEMBLE_API_TOKEN to Railway Variables |
 | Deepfake — per-frame latency | ✅ Resolved — concurrent submission via asyncio.gather() (18 Jun 2026). Total Stage 2 time ~40s vs ~156s sequential. Cold-start absorbed once across batch. | — |
+| §3.32 — Deepfake under-detection on TikTok-compressed faceswap (19 Jun 2026) | @dextergilmore66 Trump faceswap clip returns 28% (Likely Authentic) despite visually obvious body-replacement composite. All three scored frames returned sub-50% probabilities (peak 41%). Likely cause: TikTok re-encoding degrades splice artefacts below detection threshold. Open calibration gap — track before Phase 1/TestFlight. | Mitigations under consideration: increase SKEPT_FRAMES, bias sampling toward first 30–40% of clip, evaluate alternative models. |
+| §3.24 — Non-human content guard | ✅ Resolved (19 Jun 2026) — All-no-face runs now return `status=no_face`, `score=None`, excluded from fusion. Confirmed working on @nuggetonbeat dog clip. Content-type guard for partial no-face runs (human subject but rear-facing frames) remains a Phase 1 item. | — |
 
 ---
 
@@ -202,6 +204,17 @@ further implementation or data access.
 6. **Sequential frame scoring** — one Replicate request per frame, 1s delay between.
    Eliminates burst-limit 429s regardless of account tier. 6 frames ≈ 2 minutes total.
 
+7. **§3.30 Scoring principle** (19 Jun 2026) — A pillar score may only move below 0.5
+   (toward authentic) if the analyser found positive evidence of authenticity. Absence of
+   a manipulation signal is not evidence of authenticity. Two failure modes corrected:
+   (1) insufficient data → score: None, excluded from fusion denominator; (2) full run,
+   no suspicious signal, no positive authentic verification mechanism → score: 0.5 neutral.
+   Applies to all pillars. Four valid pillar states:
+     score > 0.5  — suspicious signal detected
+     score = 0.5  — ran fully; nothing suspicious; no positive authentic verification
+     score < 0.5  — positive authentic signal (earned, not default)
+     score = None — insufficient data or unavailable; excluded from denominator
+
 ---
 
 ## Deployment
@@ -224,6 +237,10 @@ further implementation or data access.
 ## Roadmap (near-term priorities)
 
 1. **Logging instrumentation** — ✅ complete — [audio], [fusion], and [subject_identity] per-job log lines all resolved (§3.28 closed 18 Jun 2026, §3.29 closed 18 Jun 2026)
+2. **§3.30 scoring principle** — ✅ complete — all six phases landed 19 Jun 2026 (deploy 6912d75f): metadata authentic-lean clamp, source_rep low_sample clamp, audio librosa-fallback neutralise + 0.15 floor removed, deepfake 0.75 floor removed, fusion denominator exclusion for None scores confirmed
+3. **§3.24 content-type guard** — ✅ complete — all-no-face runs return `status=no_face`, `score=None`, excluded from fusion (deploy 6912d75f); confirmed on @nuggetonbeat dog clip
+4. **§3.32 deepfake calibration gap** — 🔴 OPEN — TikTok-compressed faceswap under-detection; @dextergilmore66 Trump clip returns 28% despite visible body-replacement. Track before Phase 1/TestFlight.
+5. **§3.31 subject identity observability** — 🟡 PARTIAL — startup log confirmed (10 names loaded); per-call log confirmation still pending
 2. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate scouting complete — no Replicate model available; Sightengine API is best current option
 3. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
 4. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
