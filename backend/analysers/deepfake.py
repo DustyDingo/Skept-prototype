@@ -99,6 +99,13 @@ async def run_deepfake(video_path: str) -> dict:
             "summary": f"Frame analysis unavailable — {model_msg}",
         }
 
+    MIN_FRAMES = 2
+    if len(valid) < MIN_FRAMES:
+        logger.info(
+            f"[deepfake] frames_scored={len(valid)} total_sampled={len(frame_paths)} status=low_coverage score=None"
+        )
+        return {"score": None, "status": "low_coverage", "frame_confidence": 0.0}
+
     fake_probs = [r["fake_prob"] for r in valid]
     mean_fake = round(sum(fake_probs) / len(fake_probs), 3)
     max_fake = round(max(fake_probs), 3)
@@ -162,9 +169,8 @@ async def run_deepfake(video_path: str) -> dict:
             f"{len(high_conf)} frame(s) above high-confidence threshold."
         )
 
-    logger.error(
-        "[deepfake] final pillar score: %.4f (mean=%.4f * confidence=%.3f, %d/%d frames)",
-        score, mean_fake, frame_confidence, len(valid), len(frame_paths),
+    logger.info(
+        f"[deepfake] frames_scored={len(valid)} total_sampled={len(frame_paths)} frame_confidence={frame_confidence:.3f} score={score:.3f}"
     )
     return {
         "status": "complete",
