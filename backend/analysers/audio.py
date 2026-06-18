@@ -93,8 +93,20 @@ async def analyse(video_path: str) -> dict:
             score          = None
             low_confidence = True
 
+        if classifier_score is not None and heuristics_mean is not None:
+            _path = "resemble_primary+librosa"
+        elif classifier_score is not None:
+            _path = "resemble_primary"
+        elif heuristics_mean is not None:
+            _path = "librosa_fallback"
+        else:
+            _path = "no_signal"
+        print(f"[audio] path={_path} classifier_score={classifier_score} heuristics_mean={heuristics_mean}", flush=True)
+
         if score is not None:
             score = max(0.15, min(1.0, score))
+
+        print(f"[audio] final pillar score={score} low_confidence={low_confidence}", flush=True)
 
         signals = _build_signals(
             classifier_score, classifier_label,
@@ -151,6 +163,7 @@ async def _resemble_detect(
                     files={"file": ("audio.wav", f, "audio/wav")},
                 )
 
+        print(f"[audio] Resemble HTTP status={resp.status_code}", flush=True)
         if resp.status_code != 200:
             logger.warning(
                 "[audio] Resemble API returned %d: %r", resp.status_code, resp.text[:200]
