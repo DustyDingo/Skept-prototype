@@ -68,9 +68,9 @@ def get_subject_list() -> list[str]:
             if label and not (label.startswith("Q") and label[1:].isdigit()):
                 names.append(label)
         logger.info("[subject_list] Fetched %d subjects from Wikidata", len(names))
-        print(f"[subject_identity] Wikidata fetch OK — {len(names)} names loaded", flush=True)
+        logger.info(f"[subject_identity] Wikidata fetch OK — {len(names)} names loaded")
         return names
     except Exception as exc:
         logger.warning("[subject_list] Wikidata fetch failed — subject identity will be silent: %s", exc)
-        print("[subject_identity] Wikidata fetch FAILED — subject list empty, running silent", flush=True)
+        logger.info("[subject_identity] Wikidata fetch FAILED — subject list empty, running silent")
         return []
