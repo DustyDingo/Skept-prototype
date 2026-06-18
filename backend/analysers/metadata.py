@@ -184,6 +184,8 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
     else:
         score = 0.5  # all signals informational — genuinely neutral
 
+    score = max(score, 0.5)
+
     suspicious_count = sum(1 for s in signals if s.get("suspicious"))
 
     if platform_source:
@@ -210,7 +212,7 @@ def run_metadata(video_path: str, source_url: str = "") -> dict:
         else:
             summary = "Multiple metadata anomalies detected. Container provenance is absent or inconsistent."
 
-    logger.info("[metadata] final pillar score: %.4f", score)
+    logger.info(f"[metadata] score={score:.3f}")
     return {
         "status":  "complete",
         "score":   score,
