@@ -40,6 +40,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
         source        str — always "metadata_nlp"
     """
     if not subject_list or _nlp is None:
+        print(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False name=None", flush=True)
         return dict(_EMPTY)
 
     title = ydl_info.get("title") or ""
@@ -58,6 +59,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
         text = text + " " + segmented
 
     if not text.strip():
+        print(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False name=None", flush=True)
         return dict(_EMPTY)
 
     doc = _nlp(text)
@@ -75,6 +77,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
                     "[subject_identity] Match: NER entity %r matched list entry %r",
                     ent_lower, entry,
                 )
+                print(f"[subject_identity] list_size={len(subject_list)} ner_entities={entities} matched=True name={entry!r}", flush=True)
                 return {
                     "matched": True,
                     "matched_name": entry,
@@ -82,6 +85,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
                     "source": "metadata_nlp",
                 }
 
+    print(f"[subject_identity] list_size={len(subject_list)} ner_entities={entities} matched=False name=None", flush=True)
     return {
         "matched": False,
         "matched_name": None,
