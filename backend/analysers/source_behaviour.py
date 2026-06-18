@@ -177,7 +177,7 @@ async def run_source_behaviour(url: str, ydl_info: dict | None = None) -> dict:
         "signal_cards": _build_signal_cards(signals, flags, bio_refs, verified_refs),
         "summary":      _build_summary(signals, flags, handle, bio_refs, verified_refs),
     })
-    logger.info("[source_behaviour] final pillar score: %.4f", score)
+    logger.info(f"[source_behaviour] score={score:.3f} thin_data={low_sample}")
     return result
 
 
