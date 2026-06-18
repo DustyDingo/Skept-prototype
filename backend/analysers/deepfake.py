@@ -63,12 +63,9 @@ async def run_deepfake(video_path: str) -> dict:
             "summary": "Frame extraction failed.",
         }
 
-    results = []
-    for fp in frame_paths:
-        result = await _score_frame(fp)
-        if result is not None:
-            results.append(result)
-        await asyncio.sleep(1.0)
+    logger.warning("[deepfake] submitting %d frames concurrently", len(frame_paths))
+    raw_results = await asyncio.gather(*[_score_frame(fp) for fp in frame_paths])
+    results = [r for r in raw_results if r is not None]
 
     valid  = [r for r in results if "fake_prob"   in r]
     errors = [r for r in results if "model_error" in r]
