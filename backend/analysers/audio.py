@@ -87,7 +87,7 @@ async def analyse(video_path: str) -> dict:
             score          = classifier_score
             low_confidence = False
         elif heuristics_mean is not None:
-            score          = heuristics_mean
+            score          = 0.5
             low_confidence = True
         else:
             score          = None
@@ -104,9 +104,11 @@ async def analyse(video_path: str) -> dict:
         print(f"[audio] path={_path} classifier_score={classifier_score} heuristics_mean={heuristics_mean}", flush=True)
 
         if score is not None:
-            score = max(0.15, min(1.0, score))
+            score = min(1.0, score)
 
-        print(f"[audio] final pillar score={score} low_confidence={low_confidence}", flush=True)
+        resemble_used = classifier_score is not None
+        _score_str = f"{score:.3f}" if score is not None else "None"
+        logger.info(f"[audio] path={'resemble' if resemble_used else 'librosa'} score={_score_str}")
 
         signals = _build_signals(
             classifier_score, classifier_label,
