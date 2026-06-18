@@ -101,7 +101,7 @@ async def run_deepfake(video_path: str) -> dict:
     max_fake = round(max(fake_probs), 3)
     high_conf = [r for r in valid if r["fake_prob"] > 0.7]
 
-    frame_confidence = round(len(valid) / len(frame_paths), 3)
+    frame_confidence = round(max(len(valid) / len(frame_paths), 0.75), 3)
     score = round(mean_fake * frame_confidence, 3)
 
     std_dev = statistics.stdev(fake_probs) if len(fake_probs) > 1 else 0.0
