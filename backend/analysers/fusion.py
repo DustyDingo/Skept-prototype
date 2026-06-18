@@ -65,6 +65,16 @@ def fuse(
     total_weight  = 0.0
     weighted_sum  = 0.0
 
+    # §3.30 — Pillar scoring principle
+    # A pillar score may only move below 0.5 (toward authentic) if the analyser
+    # found positive evidence of authenticity. Absence of a manipulation signal
+    # is not evidence of authenticity.
+    #
+    # Four valid pillar states:
+    #   score > 0.5   — suspicious signal detected
+    #   score = 0.5   — ran fully; no suspicious signal; no positive authentic verification
+    #   score < 0.5   — positive authentic signal (earned, not default)
+    #   score = None  — insufficient data or unavailable; excluded from denominator
     for key, weight in WEIGHTS.items():
         analyser = analyser_map[key]
         if analyser.get("status") in ("complete", "skipped"):
