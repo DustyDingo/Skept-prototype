@@ -112,6 +112,7 @@ def run_reputation(url: str, ydl_info: dict | None = None) -> dict:
         low_sample = scalar < 1.0
         if low_sample and score is not None:
             score = round(0.5 + (score - 0.5) * scalar, 3)
+            score = max(score, 0.5)
 
         result["score"]        = score
         result["confidence"]   = confidence
@@ -127,7 +128,8 @@ def run_reputation(url: str, ydl_info: dict | None = None) -> dict:
         result["error"]  = str(exc)
         result["summary"] = "Source reputation analysis encountered an error."
 
-    logger.info("[source_reputation] final pillar score: %.4f", result["score"] if result.get("score") is not None else float("nan"))
+    _score_str = f"{result['score']:.3f}" if result.get("score") is not None else "None"
+    logger.info(f"[source_reputation] score={_score_str} low_sample={result.get('low_sample', False)}")
     return result
 
 
