@@ -213,6 +213,12 @@ def _librosa_heuristics(
     zcr_variance = float(np.var(zcr))
     zcr_score    = round(max(0.0, min(1.0, 1.0 - (zcr_variance / 0.01))), 3)
 
+    logger.warning(
+        "[audio] librosa sub-scores: pitch_variance=%.4f spectral_flatness=%.4f zcr_variance=%.4f",
+        pitch_score,
+        flatness_score,
+        zcr_score,
+    )
     return pitch_score, flatness_score, zcr_score, True
 
 

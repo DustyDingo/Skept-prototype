@@ -24,6 +24,10 @@ Scoring model assumption:
   denominator entirely so they do not dilute toward neutral.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 WEIGHTS = {
     "metadata":          0.08,
     "source_reputation": 0.15,
@@ -76,6 +80,13 @@ def fuse(
         return _error_verdict("No analysers produced results.")
 
     final_score = round(weighted_sum / total_weight, 3)
+
+    logger.warning(
+        "[fusion] score=%.4f denominator=%.4f pillars=%s",
+        final_score,
+        total_weight,
+        {k: {"score": round(s, 4), "weight": WEIGHTS[k], "contribution": round(s * WEIGHTS[k], 4)} for k, s in scores.items()},
+    )
 
     if final_score < 0.30:
         band        = "green"
