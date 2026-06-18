@@ -24,7 +24,7 @@ encounter viral clips and want a practical, accessible way to assess authenticit
 - **Backend:** FastAPI (Python)
 - **Video ingestion:** yt-dlp
 - **Metadata analysis:** ffprobe
-- **GPU scoring:** Replicate (active — `scamai/deepfake-faceswap-detection`, sequential frame scoring)
+- **GPU scoring:** Replicate (active — `scamai/deepfake-faceswap-detection`, concurrent frame scoring (asyncio.gather))
 - **Frontend:** Embedded HTML/CSS/JS string inside `main.py` — do NOT edit `frontend/index.html`
 - **Job store:** In-memory dict (`jobs: dict[str, JobStatus]`) — stateless, no DB
 - **Deployment:** Railway via GitHub push to main
@@ -79,8 +79,7 @@ User submits URL → backend creates `job_id` → frontend polls `/api/status/{j
 Score uses soft ceiling of 0.65 — metadata alone cannot return a fully manipulated verdict.
 
 ### Stage 2 — Deepfake Detection (Replicate)
-`analysers/deepfake.py` — extracts N evenly-spaced frames, sends each to Replicate sequentially
-with 1s delay between requests (avoids burst-limit 429s).
+`analysers/deepfake.py` — extracts N evenly-spaced frames, submits all frames to Replicate concurrently via asyncio.gather().
 Returns mean, peak, high-confidence frame count, and `high_variance` flag.
 Frame confidence scalar applied before score exits analyser: `frame_confidence = len(valid_scores) / total_frames_sampled`. Pillar score multiplied by scalar — prevents a single high-probability frame carrying full fusion weight. `frame_confidence` included in returned dict. For non-human-subject content (e.g. animal videos), scalar will suppress score toward authentic because the faceswap model rarely detects human faces in animal-subject frames — expected behaviour; Phase 1 content-type guard queued.
 
@@ -107,7 +106,7 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 - **Fallback path:** librosa heuristics (pitch variance, spectral flatness, ZCR variance) when Resemble unavailable or returns 402.
 - Weight: 0.20. Fusion denominator: 0.98 (C2PA excluded).
 
-**Observability gap (§3.28):** `audio.py` currently emits no per-job log lines. Resemble HTTP status, raw score, path taken, and librosa sub-scores are invisible in Railway logs — inferred from UI evidence card only. Fix queued.
+**Observability (§3.28 resolved):** `audio.py` now logs librosa sub-scores (pitch variance, spectral flatness, ZCR variance) when the fallback path fires. `fusion.py` now logs score, denominator, and per-pillar weighted contributions for every job.
 
 ### Stage 6 — Subject Identity (Phase 1, NLP)
 `analysers/subject_identity.py` — spaCy NER on video metadata, cross-referenced against Wikidata list.
@@ -171,8 +170,8 @@ further implementation or data access.
 | Frame sampler scene-blind | Uniform sampling misses cut-points; split-screen reels produce high-variance sets | Phase 1: ffmpeg `select='gt(scene,0.4)'` scene-change sampler |
 | C2PA | Stub by design; weight reserved | Phase 1: c2pa-rs implementation |
 | Deepfake — non-human content | Faceswap model has no meaningful signal on animal-subject content; frame confidence scalar suppresses score toward authentic correctly but evidence card does not communicate the limitation | Phase 1: content-type guard — if ≤1 frame scores a human face, set `content_type: non_human` and render pillar as "no human face detected — result not meaningful" |
-| Audio — Resemble fallback | `RESEMBLE_API_TOKEN` missing from Railway Variables causes librosa-only path; minimum floor 0.15 clamps result; Resemble HTTP status invisible in logs (§3.28) | Add RESEMBLE_API_TOKEN to Railway Variables; add per-job audio logging |
-| Deepfake — per-frame latency | Observed ~26s/frame on Replicate (expected 2–4s); consistent across runs suggesting CPU path or Replicate queuing rather than GPU (§3.25) | Check Replicate dashboard for prediction logs; add timing instrumentation to deepfake.py |
+| Audio — Resemble fallback | `RESEMBLE_API_TOKEN` missing from Railway Variables causes librosa-only path; minimum floor 0.15 clamps result | Add RESEMBLE_API_TOKEN to Railway Variables |
+| Deepfake — per-frame latency | ✅ Resolved — concurrent submission via asyncio.gather() (18 Jun 2026). Total Stage 2 time ~40s vs ~156s sequential. Cold-start absorbed once across batch. | — |
 
 ---
 
@@ -181,7 +180,7 @@ further implementation or data access.
 | Blocker | Detail | Fix |
 |---|---|---|
 | YouTube ingestion | Bot detection blocks yt-dlp on some clips | Phase A workaround: `--extractor-args "youtube:player_client=android"`; Phase B: bgutil PO token plugin + residential proxy |
-| Audio logging blind spot | `audio.py` and `fusion.py` emit no per-job log lines — scores visible in UI but intermediate computation invisible in Railway logs | Add per-job [audio] and [fusion] log lines (§3.28) |
+| Audio/fusion logging | ✅ Resolved — per-job [audio] librosa sub-scores and [fusion] score/denominator/per-pillar breakdown now emitted to Railway logs (18 Jun 2026, §3.28). | — |
 
 ---
 
@@ -224,7 +223,7 @@ further implementation or data access.
 
 ## Roadmap (near-term priorities)
 
-1. **Logging instrumentation** — add per-job [audio], [fusion], and [subject_identity] log lines (§3.28, §3.29); unblocks diagnosis without UI reconstruction
+1. **Logging instrumentation** — add per-job [subject_identity] log line (§3.29); audio and fusion logging resolved (§3.28 closed 18 Jun 2026)
 2. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate scouting complete — no Replicate model available; Sightengine API is best current option
 3. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
 4. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
