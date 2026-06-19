@@ -185,8 +185,8 @@ async def _resemble_detect(
 
             metrics   = data["item"]["metrics"]
             raw_score = metrics.get("aggregated_score")
-            if raw_score is None:
-                logger.warning("[audio] Resemble returned None score — falling through to heuristics")
+            if raw_score is None or float(raw_score) == -1.0:
+                logger.warning("[audio] Resemble returned no-signal score (aggregated_score=%r) — routing to librosa fallback", raw_score)
                 return None, None, None
             resemble_suspicion  = (float(raw_score) + 1.0) / 2.0
             classifier_score    = round(max(0.0, min(1.0, resemble_suspicion)), 4)
