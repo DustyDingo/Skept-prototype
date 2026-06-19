@@ -117,6 +117,9 @@ async def analyse(video_path: str) -> dict:
         )
         summary = _build_summary(score, low_confidence)
 
+        _rs = "not_called" if not RESEMBLE_API_TOKEN else "n/a"
+        print(f"[audio] path={_path} resemble_status={_rs} resemble_raw=n/a pitch_var={pitch_score} spec_flat={flatness_score} zcr_var={zcr_score} final_score={score}", flush=True)
+
         return {
             "status":                  "complete",
             "score":                   score,

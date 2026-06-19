@@ -97,6 +97,8 @@ def fuse(
         total_weight,
         {k: {"score": round(s, 4), "weight": WEIGHTS[k], "contribution": round(s * WEIGHTS[k], 4)} for k, s in scores.items()},
     )
+    _pillar_breakdown = {k: {"score": round(s, 4), "weight": WEIGHTS[k], "contribution": round(s * WEIGHTS[k], 4)} for k, s in scores.items()}
+    print(f"[fusion] job score={final_score:.4f} denom={total_weight:.4f} pillars={_pillar_breakdown}", flush=True)
 
     if final_score < 0.30:
         band        = "green"
