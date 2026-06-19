@@ -169,6 +169,7 @@ async def _resemble_detect(
                 )
 
         print(f"[audio] Resemble HTTP status={resp.status_code}", flush=True)
+        print(f"[audio] Resemble raw body={resp.text[:500]}", flush=True)
         if resp.status_code != 200:
             logger.warning(
                 "[audio] Resemble API returned %d: %r", resp.status_code, resp.text[:200]
