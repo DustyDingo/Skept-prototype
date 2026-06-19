@@ -31,6 +31,11 @@ SELECT DISTINCT ?item ?itemLabel WHERE {
     }
     ?party wdt:P488 ?item .
     ?item wdt:P31 wd:Q5 .
+  } UNION {
+    VALUES ?item {
+      wd:Q22686
+    }
+    ?item wdt:P31 wd:Q5 .
   }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
 }
@@ -44,6 +49,7 @@ SELECT DISTINCT ?item ?itemLabel WHERE {
 # Q29552 Democratic Party (US)   Q29468 Republican Party (US)
 # Q9630 Labour Party (UK)        Q9626 Conservative Party (UK)
 # Q50698 Liberal Democrats (UK)  Q10647 Scottish National Party
+# Q22686 Donald Trump
 
 
 def get_subject_list() -> list[str]:
