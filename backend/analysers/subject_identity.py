@@ -41,6 +41,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
     """
     if not subject_list or _nlp is None:
         logger.info(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False")
+        print(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False", flush=True)
         return dict(_EMPTY)
 
     title = ydl_info.get("title") or ""
@@ -60,6 +61,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
 
     if not text.strip():
         logger.info(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False")
+        print(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False", flush=True)
         return dict(_EMPTY)
 
     doc = _nlp(text)
@@ -67,6 +69,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
 
     if not entities:
         logger.info(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False")
+        print(f"[subject_identity] list_size={len(subject_list)} ner_entities=[] matched=False", flush=True)
         return {"matched": False, "matched_name": None, "ner_entities": [], "source": "metadata_nlp"}
 
     entities_lower = [e.lower() for e in entities]
@@ -78,7 +81,9 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
                     "[subject_identity] Match: NER entity %r matched list entry %r",
                     ent_lower, entry,
                 )
+                print(f"[subject_identity] Match: NER entity {ent_lower!r} matched list entry {entry!r}", flush=True)
                 logger.info(f"[subject_identity] list_size={len(subject_list)} ner_entities={entities} matched=True name='{entry}'")
+                print(f"[subject_identity] list_size={len(subject_list)} ner_entities={entities} matched=True name='{entry}'", flush=True)
                 return {
                     "matched": True,
                     "matched_name": entry,
@@ -87,6 +92,7 @@ def detect_subject(ydl_info: dict, subject_list: list[str]) -> dict:
                 }
 
     logger.info(f"[subject_identity] list_size={len(subject_list)} ner_entities={entities} matched=False")
+    print(f"[subject_identity] list_size={len(subject_list)} ner_entities={entities} matched=False", flush=True)
     return {
         "matched": False,
         "matched_name": None,
