@@ -71,6 +71,7 @@ def get_subject_list() -> list[str]:
         print(f"[subject_list] Fetched {len(names)} subjects from Wikidata", flush=True)
         logger.info(f"[subject_identity] Wikidata fetch OK — {len(names)} names loaded")
         print(f"[subject_identity] Wikidata fetch OK — {len(names)} names loaded", flush=True)
+        print(f"[subject_identity] subject_list={names}", flush=True)
         return names
     except Exception as exc:
         logger.warning("[subject_list] Wikidata fetch failed — subject identity will be silent: %s", exc)
