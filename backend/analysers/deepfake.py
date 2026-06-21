@@ -81,8 +81,10 @@ async def run_deepfake(video_path: str) -> dict:
         ]
 
         # Non-human content guard
-        if len(frame_scores) == 0:
-            logger.info("[deepfake] status=non_human frames=0 score=None")
+        valid_frame_count = len(frame_scores)
+        if valid_frame_count <= 1:
+            print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=excluded", flush=True)
+            logger.info("[deepfake] status=non_human frames=%d score=None", valid_frame_count)
             return {
                 "status":           "non_human",
                 "content_type":     "non_human",
@@ -92,35 +94,53 @@ async def run_deepfake(video_path: str) -> dict:
                 "summary":          "No human subject detected in video frames — deepfake analysis not applicable.",
                 "high_variance":    False,
             }
+        print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=pass", flush=True)
 
-        # Low coverage guard
-        if len(frame_scores) < 2:
-            logger.info("[deepfake] status=low_coverage frame_scores=%d", len(frame_scores))
-            return {"score": None, "status": "low_coverage", "frame_confidence": 0.0}
+        # Static-synthetic content guard (AI-generated still image packaged as video)
+        stdev_val = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
+        if pillar_score_raw < 0.05 and stdev_val < 0.005 and valid_frame_count > 10:
+            print(
+                f"[deepfake] guard=static_synthetic score={pillar_score_raw:.4f} "
+                f"stdev={stdev_val:.4f} frames={valid_frame_count} result=excluded",
+                flush=True,
+            )
+            return {
+                "status":           "static_image",
+                "content_type":     "static_image",
+                "score":            None,
+                "frame_confidence": 0.0,
+                "signals":          [],
+                "summary":          "Video appears to be a static image — visual frame deepfake analysis not applicable. Audio analysis is the primary signal.",
+                "high_variance":    False,
+            }
+        print(
+            f"[deepfake] guard=static_synthetic score={pillar_score_raw:.4f} "
+            f"stdev={stdev_val:.4f} frames={valid_frame_count} result=pass",
+            flush=True,
+        )
 
         # Frame confidence scalar and final score
-        scalar      = len(frame_scores) / FRAMES_TO_SAMPLE
+        scalar      = valid_frame_count / FRAMES_TO_SAMPLE
         final_score = round(pillar_score_raw * scalar, 3)
 
-        # High-variance detection
-        std_dev       = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
-        high_variance = std_dev > 0.25
+        # High-variance detection (reuses stdev_val computed above)
+        high_variance = stdev_val > 0.25
 
         print(
             f"[deepfake] resemble_score={pillar_score_raw:.4f} "
-            f"frames={len(frame_scores)}/{FRAMES_TO_SAMPLE} "
+            f"frames={valid_frame_count}/{FRAMES_TO_SAMPLE} "
             f"scalar={scalar:.4f} final={final_score:.4f}",
             flush=True,
         )
         logger.info(
             "[deepfake] resemble_score=%.4f frames=%d/%d scalar=%.4f final=%.4f high_variance=%s",
-            pillar_score_raw, len(frame_scores), FRAMES_TO_SAMPLE, scalar, final_score, high_variance,
+            pillar_score_raw, valid_frame_count, FRAMES_TO_SAMPLE, scalar, final_score, high_variance,
         )
 
         signals = [
             {
                 "label":      "Frame coverage",
-                "value":      f"{len(frame_scores)} of {FRAMES_TO_SAMPLE} sampled frames scored",
+                "value":      f"{valid_frame_count} of {FRAMES_TO_SAMPLE} sampled frames scored",
                 "weight":     "info",
                 "suspicious": False,
             },
@@ -152,7 +172,7 @@ async def run_deepfake(video_path: str) -> dict:
         if pillar_score_raw < 0.3:
             summary = f"Video analysis found no deepfake indicators ({pillar_score_raw:.0%} suspicion score)."
         elif pillar_score_raw < 0.6:
-            summary = f"Video analysis inconclusive — {pillar_score_raw:.0%} suspicion score across {len(frame_scores)} frames."
+            summary = f"Video analysis inconclusive — {pillar_score_raw:.0%} suspicion score across {valid_frame_count} frames."
         else:
             summary = f"Video analysis flags deepfake characteristics — {pillar_score_raw:.0%} suspicion score."
 
@@ -161,7 +181,7 @@ async def run_deepfake(video_path: str) -> dict:
             "score":            final_score,
             "signals":          signals,
             "summary":          summary,
-            "frames_sampled":   len(frame_scores),
+            "frames_sampled":   valid_frame_count,
             "frame_confidence": scalar,
             "high_variance":    high_variance,
         }
