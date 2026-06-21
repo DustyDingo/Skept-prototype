@@ -2,7 +2,7 @@
 Skept — Video Deepfake Analyser (Resemble AI DETECT-3B Omni)
 
 Submits the video file to the Resemble AI /api/v2/detect endpoint.
-Parses video_metrics.score (top-level) and per-frame ImageResult children for
+Parses video_metrics.score (top-level) and per-frame VideoFrameResult children for
 frame confidence scalar, high-variance detection, and non-human content guard.
 
 Score is already [0.0, 1.0] — no inversion needed (unlike audio path).
@@ -62,6 +62,7 @@ async def run_deepfake(video_path: str) -> dict:
         item             = data.get("item", {})
         video_metrics    = item.get("video_metrics", {})
         pillar_score_raw = video_metrics.get("score")
+        pillar_label     = video_metrics.get("label")
         children         = video_metrics.get("children") or []
 
         if pillar_score_raw is None:
@@ -69,13 +70,14 @@ async def run_deepfake(video_path: str) -> dict:
             return _error_result("No video_metrics.score in Resemble response")
 
         pillar_score_raw = float(pillar_score_raw)
+        print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
 
-        # Extract ImageResult leaf scores from two-level children hierarchy
+        # Extract VideoFrameResult leaf scores from two-level children hierarchy
         frame_scores = [
             float(c["score"])
             for child in children
             for c in child.get("children", [])
-            if c.get("type") == "ImageResult" and c.get("score") is not None
+            if c.get("type") == "VideoFrameResult" and c.get("score") is not None
         ]
 
         # Non-human content guard
