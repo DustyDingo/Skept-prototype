@@ -1,330 +1,208 @@
 """
-Skept — Frame-Level Deepfake Analyser (Replicate)
-Extracts frames via ffmpeg, sends each to Replicate faceswap detection API,
-aggregates scores into a verdict signal.
+Skept — Video Deepfake Analyser (Resemble AI DETECT-3B Omni)
 
-Model: scamai/deepfake-faceswap-detection
-       Detects face-replacement deepfakes specifically. Does not cover purely
-       AI-generated imagery — use as a faceswap signal pillar, not a general
-       synthetic-content detector.
+Submits the video file to the Resemble AI /api/v1/detect endpoint.
+Parses video_metrics.aggregated_score and per-frame children data for
+frame confidence scalar, high-variance detection, and non-human content guard.
 
-TEMPORARY STAND-IN: Replace with prithivMLmods/deepfake-detector-model-v1
-       (via HuggingFace paid tier) once HF billing is active. At that point,
-       retain scamai as an additive 8th signal pillar alongside the general
-       synthetic content detector.
-
-Replaces: capcheck/ai-image-detection (404 — not actually hosted on Replicate)
+Score is already [0.0, 1.0] — no inversion needed (unlike audio path).
 """
 
 import asyncio
 import logging
 import os
-import re
 import statistics
-import subprocess
-import tempfile
-from io import BytesIO
 from pathlib import Path
 
-import replicate
+import httpx
 
 logger = logging.getLogger(__name__)
 
-REPLICATE_MODEL = "scamai/deepfake-faceswap-detection:163f897bd0e920d375e4e67299bfc4c5eeeb8beb243d5ea9b309d1c299f562e7"
-FRAMES_TO_SAMPLE = int(os.getenv("SKEPT_FRAMES", "6"))
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
+RESEMBLE_API_TOKEN = os.getenv("RESEMBLE_API_TOKEN")
+RESEMBLE_ENDPOINT  = "https://api.resemble.ai/api/v1/detect"
+FRAMES_TO_SAMPLE   = int(os.getenv("SKEPT_FRAMES", "6"))
 
-# Logged at import time so the resolved value is visible in Railway on every deploy.
 print(
-    f"[deepfake] FRAMES_TO_SAMPLE={FRAMES_TO_SAMPLE} "
+    f"[deepfake] model=resemble_detect_v1_omni "
+    f"FRAMES_TO_SAMPLE={FRAMES_TO_SAMPLE} "
     f"(SKEPT_FRAMES env={os.getenv('SKEPT_FRAMES', 'not set')})",
     flush=True,
 )
 
 
 async def run_deepfake(video_path: str) -> dict:
-    if not REPLICATE_API_TOKEN:
+    if not RESEMBLE_API_TOKEN:
         return _no_token_result()
 
-    logger.warning("[deepfake] starting — video=%r FRAMES_TO_SAMPLE=%d", video_path, FRAMES_TO_SAMPLE)
-    frame_paths = await asyncio.to_thread(_extract_frames, video_path, FRAMES_TO_SAMPLE)
-    logger.warning(
-        "[deepfake] extraction complete — %d/%d frames returned: %s",
-        len(frame_paths), FRAMES_TO_SAMPLE,
-        [(Path(p).name, Path(p).stat().st_size) for p in frame_paths],
-    )
+    logger.warning("[deepfake] starting — video=%r", video_path)
 
-    if not frame_paths:
-        return {
-            "status": "error",
-            "error": "Frame extraction produced no output.",
-            "score": 0.5,
-            "signals": [],
-            "summary": "Frame extraction failed.",
-        }
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            with open(video_path, "rb") as f:
+                resp = await client.post(
+                    RESEMBLE_ENDPOINT,
+                    headers={
+                        "Authorization": f"Bearer {RESEMBLE_API_TOKEN}",
+                        "Prefer":        "wait",
+                    },
+                    files={"file": (Path(video_path).name, f, "video/mp4")},
+                )
 
-    logger.warning("[deepfake] submitting %d frames concurrently", len(frame_paths))
-    raw_results = await asyncio.gather(*[_score_frame(fp) for fp in frame_paths])
-    results = [r for r in raw_results if r is not None]
+        print(f"[deepfake] Resemble HTTP status={resp.status_code}", flush=True)
+        print(f"[deepfake] Resemble raw body={resp.text[:500]}", flush=True)
 
-    valid  = [r for r in results if "fake_prob"   in r]
-    errors = [r for r in results if "model_error" in r]
+        if resp.status_code != 200:
+            logger.warning("[deepfake] Resemble API returned %d: %r", resp.status_code, resp.text[:200])
+            return _error_result(f"Resemble API error {resp.status_code}")
 
-    if len(valid) == 0:
-        all_no_face = errors and all(
-            "no face" in r.get("model_error", "").lower()
-            for r in errors
-        )
-        if all_no_face:
+        data = resp.json()
+        if not data.get("success"):
+            logger.warning("[deepfake] Resemble success=false: %r", resp.text[:300])
+            return _error_result("Resemble returned success=false")
+
+        video_metrics    = data.get("item", {}).get("video_metrics", {})
+        aggregated_score = video_metrics.get("aggregated_score")
+        children         = video_metrics.get("children") or []
+
+        if aggregated_score is None:
+            logger.warning("[deepfake] no aggregated_score in Resemble response")
+            return _error_result("No aggregated_score in Resemble response")
+
+        aggregated_score = float(aggregated_score)
+        total_frames     = len(children)
+
+        subjects     = [c for c in children if _frame_has_subject(c)]
+        frame_scores = [float(c["score"]) for c in children if c.get("score") is not None]
+
+        # Non-human content guard
+        if total_frames > 0 and len(subjects) <= 1:
             logger.info(
-                "[deepfake] status=no_face frames_sampled=%d score=None",
-                len(frame_paths),
+                "[deepfake] status=non_human subjects=%d total=%d score=None",
+                len(subjects), total_frames,
             )
             return {
-                "status":         "no_face",
-                "score":          None,
+                "status":           "non_human",
+                "content_type":     "non_human",
+                "score":            None,
                 "frame_confidence": 0.0,
-                "signals":        [],
-                "summary":        "No faces detected in any sampled frame — faceswap analysis not applicable.",
-                "model":          REPLICATE_MODEL,
-                "frames_sampled": 0,
-                "high_variance":  False,
+                "signals":          [],
+                "summary":          "No human subject detected in video frames — deepfake analysis not applicable.",
+                "high_variance":    False,
             }
-        model_msg = errors[0]["model_error"] if errors else "all frame requests failed"
+
+        # Low coverage guard
+        if len(frame_scores) < 2:
+            logger.info("[deepfake] status=low_coverage frame_scores=%d", len(frame_scores))
+            return {"score": None, "status": "low_coverage", "frame_confidence": 0.0}
+
+        # Frame confidence scalar
+        coverage_n     = len(subjects) if total_frames > 0 else len(frame_scores)
+        coverage_total = max(total_frames, len(frame_scores), 1)
+        scalar         = round(coverage_n / coverage_total, 3)
+        mean_score     = round(sum(frame_scores) / len(frame_scores), 3)
+        pillar_score   = round(mean_score * scalar, 3)
+
+        # High-variance detection
+        std_dev       = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
+        high_variance = std_dev > 0.25
+
+        print(
+            f"[deepfake] resemble_score={aggregated_score:.4f} "
+            f"coverage={coverage_n}/{coverage_total} "
+            f"scalar={scalar:.4f} final={pillar_score:.4f}",
+            flush=True,
+        )
+        logger.info(
+            "[deepfake] resemble_score=%.4f coverage=%d/%d scalar=%.4f final=%.4f high_variance=%s",
+            aggregated_score, coverage_n, coverage_total, scalar, pillar_score, high_variance,
+        )
+
+        signals = [
+            {
+                "label":     "Coverage",
+                "value":     f"{coverage_n} of {coverage_total} frames with detected subject",
+                "weight":    "info",
+                "suspicious": False,
+            },
+            {
+                "label":     "Frame confidence scalar",
+                "value":     f"{scalar:.0%}",
+                "weight":    "info",
+                "suspicious": False,
+            },
+            {
+                "label":     "Mean frame score",
+                "value":     f"{mean_score:.0%}",
+                "weight":    "high",
+                "suspicious": mean_score > 0.5,
+            },
+            {
+                "label":     "Aggregated suspicion score",
+                "value":     f"{aggregated_score:.0%}",
+                "weight":    "high",
+                "suspicious": aggregated_score > 0.5,
+            },
+        ]
+
+        if high_variance:
+            signals.append({
+                "label":     "High score variance across frames",
+                "value":     (
+                    f"Scores ranged {min(frame_scores):.0%} – {max(frame_scores):.0%}. "
+                    "May reflect scene cuts or multiple subjects."
+                ),
+                "weight":    "medium",
+                "suspicious": False,
+            })
+
+        if aggregated_score < 0.3:
+            summary = f"Video analysis found no deepfake indicators ({aggregated_score:.0%} suspicion score)."
+        elif aggregated_score < 0.6:
+            summary = f"Video analysis inconclusive — {aggregated_score:.0%} suspicion score across {coverage_n} frames."
+        else:
+            summary = f"Video analysis flags deepfake characteristics — {aggregated_score:.0%} suspicion score."
+
         return {
-            "status":  "error",
-            "score":   None,
-            "error":   model_msg,
-            "signals": [],
-            "summary": f"Frame analysis unavailable — {model_msg}",
+            "status":           "complete",
+            "score":            pillar_score,
+            "signals":          signals,
+            "summary":          summary,
+            "frames_sampled":   coverage_n,
+            "frame_confidence": scalar,
+            "high_variance":    high_variance,
         }
 
-    MIN_FRAMES = 2
-    if len(valid) < MIN_FRAMES:
-        logger.info(
-            f"[deepfake] frames_scored={len(valid)} total_sampled={len(frame_paths)} status=low_coverage score=None"
-        )
-        return {"score": None, "status": "low_coverage", "frame_confidence": 0.0}
-
-    fake_probs = [r["fake_prob"] for r in valid]
-    mean_fake = round(sum(fake_probs) / len(fake_probs), 3)
-    max_fake = round(max(fake_probs), 3)
-    high_conf = [r for r in valid if r["fake_prob"] > 0.7]
-
-    frame_confidence = round(len(valid) / len(frame_paths), 3)
-    score = round(mean_fake * frame_confidence, 3)
-
-    std_dev = statistics.stdev(fake_probs) if len(fake_probs) > 1 else 0.0
-    high_variance = std_dev > 0.25
-
-    signals = [
-        {
-            "label": "Frames analysed",
-            "value": f"{len(valid)} of {len(frame_paths)} sampled",
-            "weight": "info",
-            "suspicious": False,
-        },
-        {
-            "label": "Frame confidence",
-            "value": f"{frame_confidence:.0%}",
-            "weight": "info",
-            "suspicious": False,
-        },
-        {
-            "label": "Mean faceswap probability",
-            "value": f"{mean_fake:.0%}",
-            "weight": "high",
-            "suspicious": mean_fake > 0.5,
-        },
-        {
-            "label": "Peak faceswap probability",
-            "value": f"{max_fake:.0%}",
-            "weight": "high",
-            "suspicious": max_fake > 0.7,
-        },
-        {
-            "label": "High-confidence faceswap frames",
-            "value": f"{len(high_conf)} of {len(valid)}",
-            "weight": "high",
-            "suspicious": len(high_conf) > 0,
-        },
-    ]
-
-    if high_variance:
-        signals.append({
-            "label": "High score variance across frames",
-            "value": f"Scores ranged {min(fake_probs):.0%} – {max(fake_probs):.0%}. May reflect scene cuts or multiple subjects rather than manipulation.",
-            "weight": "medium",
-            "suspicious": False,
-        })
-
-    if mean_fake < 0.3:
-        summary = f"Frame analysis found no faceswap indicators ({mean_fake:.0%} mean probability)."
-    elif mean_fake < 0.6:
-        summary = f"Frame analysis inconclusive - {mean_fake:.0%} mean faceswap probability across {len(valid)} sampled frames."
-    else:
-        summary = (
-            f"Frame analysis flags faceswap characteristics - {mean_fake:.0%} mean and "
-            f"{max_fake:.0%} peak probability. "
-            f"{len(high_conf)} frame(s) above high-confidence threshold."
-        )
-
-    logger.info(
-        f"[deepfake] frames_scored={len(valid)} total_sampled={len(frame_paths)} frame_confidence={frame_confidence:.3f} score={score:.3f}"
-    )
-    return {
-        "status": "complete",
-        "score": score,
-        "signals": signals,
-        "summary": summary,
-        "model": REPLICATE_MODEL,
-        "frames_sampled": len(valid),
-        "frame_confidence": frame_confidence,
-        "high_variance": high_variance,
-    }
-
-
-def _extract_frames(video_path: str, n: int) -> list[str]:
-    """Unchanged — ffmpeg frame extraction, evenly spaced with 5% margin."""
-    tmpdir = tempfile.mkdtemp(prefix="skept_frames_")
-    dur_result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-         "-of", "csv=p=0", video_path],
-        capture_output=True, text=True, timeout=15
-    )
-    try:
-        duration = float(dur_result.stdout.strip())
-    except Exception:
-        duration = 30.0
-
-    margin = duration * 0.05
-    usable = max(duration - 2 * margin, 1.0)
-    interval = usable / n
-    frames = []
-    for i in range(n):
-        t = margin + i * interval
-        out = Path(tmpdir) / f"frame_{i:03d}.jpg"
-        proc = subprocess.run(
-            ["ffmpeg", "-ss", str(t), "-i", video_path,
-             "-frames:v", "1", "-q:v", "2", str(out), "-y", "-loglevel", "error"],
-            capture_output=True, timeout=15
-        )
-        if out.exists() and out.stat().st_size > 0:
-            logger.warning("[deepfake] frame %d OK — t=%.2fs size=%d bytes", i, t, out.stat().st_size)
-            frames.append(str(out))
-        else:
-            logger.warning(
-                "[deepfake] frame %d FAILED — t=%.2fs exists=%s returncode=%d stderr=%r",
-                i, t, out.exists(), proc.returncode, proc.stderr[:200] if proc.stderr else b"",
-            )
-    return frames
-
-
-async def _score_frame(frame_path: str) -> dict | None:
-    """
-    Score a single frame via Replicate scamai/deepfake-faceswap-detection.
-
-    Output schema is logged on first call for verification — the model returns
-    a confidence score for faceswap likelihood. Defensive parsing handles both
-    dict and list responses so we can confirm the schema from Railway logs and
-    adjust if needed without another deploy cycle.
-    """
-    try:
-        frame_size = Path(frame_path).stat().st_size
-        logger.warning("[deepfake] scoring %r — file size=%d bytes", Path(frame_path).name, frame_size)
-
-        image_data = BytesIO(Path(frame_path).read_bytes())
-        output = await asyncio.to_thread(
-            replicate.run,
-            REPLICATE_MODEL,
-            input={"image": image_data},
-        )
-
-        logger.warning("[deepfake] raw output type=%s value=%r", type(output).__name__, output)
-
-        fake_prob = _parse_fake_prob(output)
-        if fake_prob is None:
-            model_error = str(output) if output is not None else "no output from model"
-            logger.warning("[deepfake] model error for %s: %r", Path(frame_path).name, model_error)
-            return {"frame": frame_path, "model_error": model_error}
-        return {"frame": frame_path, "fake_prob": round(float(fake_prob), 4)}
-
     except Exception as e:
-        logger.warning("[deepfake] frame scoring error (%s): %s", Path(frame_path).name, e)
-        return None
+        logger.exception("[deepfake] analysis error: %s", e)
+        return _error_result(str(e))
 
 
-def _parse_fake_prob(output) -> float | None:
-    """
-    Defensive parser for Replicate model output.
-    Returns None when the model signals an error or returns an unrecognised
-    string — callers must treat None as a model failure, not a 0.5 score.
-    """
-    if output is None:
-        return None
+def _frame_has_subject(child: dict) -> bool:
+    for field in ("has_subject", "has_face", "has_human"):
+        if field in child:
+            return bool(child[field])
+    return child.get("score") is not None
 
-    if isinstance(output, str):
-        if output.lower().startswith("error:"):
-            return None
-        # Handle "Deepfake faceswap probability = 0.2907" and similar sentence formats
-        match = re.search(r'=\s*([\d.]+)', output)
-        if match:
-            return float(match.group(1))
-        try:
-            return float(output)
-        except ValueError:
-            return None
 
-    # Dict: {"score": 0.95} or {"fake": 0.95} or {"probability": 0.95}
-    if isinstance(output, dict):
-        for key in ("score", "fake", "fake_probability", "probability", "confidence"):
-            if key in output:
-                return float(output[key])
-        # Fallback: take the first numeric value
-        for v in output.values():
-            try:
-                return float(v)
-            except (TypeError, ValueError):
-                continue
-
-    # List: [{"label": "fake", "score": 0.95}, ...] or [0.95, 0.05]
-    if isinstance(output, list):
-        if output and isinstance(output[0], dict):
-            fake_item = next(
-                (item for item in output
-                 if str(item.get("label", "")).lower() in ("fake", "deepfake", "faceswap")),
-                None,
-            )
-            if fake_item:
-                return float(fake_item.get("score", fake_item.get("probability", 0.5)))
-            # No matching label — take first item's score
-            first = output[0]
-            for key in ("score", "probability", "confidence"):
-                if key in first:
-                    return float(first[key])
-        elif output and isinstance(output[0], (int, float)):
-            # Raw probability list — assume index 0 is fake probability
-            return float(output[0])
-
-    # Scalar
-    try:
-        return float(output)
-    except (TypeError, ValueError):
-        pass
-
-    return None
+def _error_result(reason: str) -> dict:
+    return {
+        "status":  "error",
+        "score":   None,
+        "error":   reason,
+        "signals": [],
+        "summary": f"Video deepfake analysis unavailable — {reason}",
+    }
 
 
 def _no_token_result() -> dict:
     return {
-        "status": "skipped",
-        "score": 0.5,
+        "status":  "skipped",
+        "score":   0.5,
         "signals": [{
-            "label": "REPLICATE_API_TOKEN not configured",
-            "value": "Set REPLICATE_API_TOKEN in Railway environment variables",
-            "weight": "high",
+            "label":     "RESEMBLE_API_TOKEN not configured",
+            "value":     "Set RESEMBLE_API_TOKEN in Railway environment variables",
+            "weight":    "high",
             "suspicious": False,
         }],
-        "summary": "Frame-level analysis skipped - no Replicate API token configured.",
-        "model": REPLICATE_MODEL,
+        "summary": "Video deepfake analysis skipped — no Resemble API token configured.",
     }

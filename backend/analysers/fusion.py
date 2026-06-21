@@ -2,13 +2,15 @@
 Skept — Fusion & Scoring Service
 Weighted ensemble combining analyser outputs into a final verdict band.
 
-Weights:
-  - Deepfake frame analysis:     0.40 — primary detection signal
-  - Audio & voice clone:         0.20 — voice synthesis classifier + heuristics
-  - C2PA (not yet in prototype): 0.22 — highest trust when present
-  - Source reputation:           0.15 — durable behavioural signal
-  - Source behaviour:            0.15 — account bio / cross-platform identity
-  - Metadata forensics:          0.08 — supporting context, capped at 0.5
+Verdict pillars (contribute to fusion score):
+  - Deepfake video analysis:     0.60 — primary detection signal (§3.33)
+  - Audio & voice clone:         0.35 — voice synthesis classifier + heuristics (§3.33)
+  - C2PA (not yet in prototype): 0.40 — highest trust when present (stub, excluded when None)
+
+Source Details pillars (run on every job, feed evidence card only — §3.33):
+  - Metadata forensics:          not in denominator
+  - Source reputation:           not in denominator
+  - Source behaviour:            not in denominator
 
 Verdict bands:
   Green  0.0 – 0.30   Likely authentic
@@ -20,8 +22,9 @@ Scoring model assumption:
   below 0.5 = evidence of authenticity, above 0.5 = evidence of manipulation.
   A weighted mean of all-0.5 inputs produces exactly 0.5 (amber/inconclusive),
   so absent or neutral signals correctly contribute no net push in either direction.
-  C2PA and audio return score=None when unavailable; they are excluded from the
-  denominator entirely so they do not dilute toward neutral.
+  Pillars returning score=None are excluded from the denominator entirely.
+  The denominator self-adjusts: if deepfake or audio returns None, the remaining
+  active pillar weights normalise to 1.0 automatically.
 """
 
 import logging
@@ -29,16 +32,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 WEIGHTS = {
-    "metadata":          0.08,
-    "source_reputation": 0.15,
-    "source_behaviour":  0.15,
-    "c2pa":              0.22,
-    "deepfake":          0.40,
-    "audio":             0.20,
+    "deepfake": 0.60,
+    "audio":    0.35,
+    "c2pa":     0.40,  # reserved — stub returns None, excluded from denominator
 }
+# Source Details pillars (metadata, source_rep, source_beh) excluded from fusion denominator per §3.33. Evidence card only.
 
-# Maximum denominator when all pillars active (C2PA always None in prototype):
-# 0.08 + 0.15 + 0.15 + 0.40 + 0.20 = 0.98
+# Maximum denominator when all verdict pillars active (C2PA always None in prototype):
+# 0.60 + 0.35 = 0.95
 _MAX_ACTIVE_DENOM = sum(w for k, w in WEIGHTS.items() if k != "c2pa")
 print(f"[fusion] max denominator (C2PA excluded) = {_MAX_ACTIVE_DENOM:.2f}", flush=True)
 

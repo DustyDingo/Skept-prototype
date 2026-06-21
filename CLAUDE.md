@@ -120,19 +120,22 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 **Observability (§3.29 resolved):** `subject_list.py` now prints Wikidata fetch OK/FAILED with name count at startup. `subject_identity.py` now prints list_size, ner_entities, matched, and name at every return point (18 Jun 2026).
 
 ### Fusion Layer
-`analysers/fusion.py` — fixed weighted ensemble:
-- Metadata weight: 0.08
-- Source reputation weight: 0.15
-- Source behaviour weight: 0.15
-- Deepfake weight: 0.40
-- Audio weight: 0.20 (Resemble AI voice clone classifier primary; librosa heuristics fallback)
-- C2PA weight: 0.22 (reserved — stub returns `score: None`, excluded from denominator)
+`analysers/fusion.py` — fixed weighted ensemble (§3.33, 22 Jun 2026):
 
-Max active denominator (C2PA always None): 0.08+0.15+0.15+0.40+0.20 = 0.98
+**Verdict pillars (in denominator):**
+- Deepfake weight: 0.60 (Resemble AI DETECT-3B Omni video endpoint)
+- Audio weight: 0.35 (Resemble AI voice clone classifier primary; librosa heuristics fallback)
+- C2PA weight: 0.40 (reserved — stub returns `score: None`, excluded from denominator)
+
+**Source Details pillars (excluded from denominator — evidence card only):**
+- Metadata: runs every job, shown in Source Details section, not a verdict input
+- Source reputation: runs every job, shown in Source Details section, not a verdict input
+- Source behaviour: runs every job, shown in Source Details section, not a verdict input
+
+Max active denominator (C2PA always None): 0.60+0.35 = 0.95
 
 Pillars returning `score: None` are excluded from the weighted denominator entirely.
-Pillars returning `score: 0.50` contribute dead weight — architectural decision pending on
-whether to treat exactly-neutral scores the same as None.
+Denominator self-adjusts: if a verdict pillar returns None, remaining weights normalise to 1.0.
 
 **Verdict bands:**
 - Green 0.0–0.30 → "Likely authentic"
@@ -145,15 +148,15 @@ whether to treat exactly-neutral scores the same as None.
 
 | Pillar | Status | Notes |
 |---|---|---|
-| Metadata & container forensics | ✅ Active | NTSC fps fix deployed. §3.30: authentic-leaning branches clamped to 0.5; no positive verification mechanism in Phase 0/1. |
-| Source reputation | ✅ Active (partial) | Instagram: 1/5 signals; low-confidence badge shown. §3.30: `low_sample=True` → score 0.5 neutral; established history → authentic lean permissible. |
-| Source behaviour & bio | ✅ Active (partial) | Bio link check only. §3.30: returns 0.5 on no signal — confirmed correct. |
-| C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1. §3.30: no change — already excluded when stubbed. |
-| Frame-level deepfake | ✅ Active | Replicate live, concurrent scoring (asyncio.gather), high-variance detection. §3.30: min 2/N frames for score contribution; below threshold → `status=low_coverage`, `score=None`, excluded from fusion. All-no-face → `status=no_face`, `score=None`, excluded (§3.24 content-type guard). 0.75 asymmetric floor removed — raw scalar `len(valid)/len(frame_paths)` now applies. |
-| Audio & voice clone | ✅ Active (partial) | Resemble AI voice clone classifier active; librosa heuristics fallback; weight 0.20. §3.30: Resemble AI path → authentic lean permissible; librosa-only fallback → score 0.5 neutral; 0.15 minimum floor removed. |
+| Metadata & container forensics | ✅ Active (Source Details only) | §3.33: excluded from fusion denominator. Shown in Source Details evidence section. §3.30: authentic-leaning branches clamped to 0.5. |
+| Source reputation | ✅ Active (Source Details only) | §3.33: excluded from fusion denominator. Shown in Source Details section. Instagram: 1/5 signals; low-confidence badge shown. |
+| Source behaviour & bio | ✅ Active (Source Details only) | §3.33: excluded from fusion denominator. Shown in Source Details section. Bio link check only. |
+| C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1. |
+| Frame-level deepfake | ✅ Active | §3.33: Resemble AI DETECT-3B Omni video endpoint; weight 0.60. Per-frame coverage scalar from `video_metrics.children`. Non-human guard: ≤1 subject frame → `status=non_human`, `score=None`. Low coverage: <2 scored frames → `status=low_coverage`, `score=None`. |
+| Audio & voice clone | ✅ Active (partial) | §3.33: weight 0.35. Resemble AI voice clone classifier primary; librosa heuristics fallback. §3.30: Resemble path → authentic lean permissible; librosa-only fallback → score 0.5 neutral. |
 | Pixel-level forensics | ⏳ Not wired | Backlog |
 
-**Active fusion pillars: 5/7**
+**Active fusion pillars: 2/7 (deepfake + audio). Source Details pillars: 3 (metadata, source_rep, source_beh). C2PA stub: 1. Not wired: 1.**
 
 ---
 
@@ -194,15 +197,20 @@ further implementation or data access.
 2. **Stateless job store** — in-memory dict. Intentional at prototype stage. Phase 1 requires
    persistent job queue (Temporal is the current lean).
 
-3. **C2PA slot reserved** — do not remove the 0.40 weight slot.
+3. **C2PA slot reserved** — weight ~0.40 reserved but excluded from denominator while stub.
+   Do not remove the slot.
 
 4. **No test suite** — prototype velocity takes priority. Don't add tests without discussion.
 
 5. **50-anchored scoring** — 0.5 = neutral/no information throughout. Below 0.5 = evidence of
    authenticity; above 0.5 = evidence of manipulation. Metadata soft ceiling 0.65.
 
-6. **Sequential frame scoring** — one Replicate request per frame, 1s delay between.
-   Eliminates burst-limit 429s regardless of account tier. 6 frames ≈ 2 minutes total.
+6. **Resemble AI for both audio and video** (§3.33, 22 Jun 2026) — Resemble DETECT-3B Omni
+   used for both pillars via the same `RESEMBLE_API_TOKEN`. Audio path: `POST /api/v2/detect`
+   (file upload, score inversion `(raw+1)/2`). Video path: `POST /api/v1/detect`
+   (file upload, score is already [0.0, 1.0] — no inversion). Replicate is no longer used
+   for deepfake detection but `REPLICATE_API_TOKEN` remains in Railway env vars pending
+   confirmation of Resemble video working in live run.
 
 7. **§3.30 Scoring principle** (19 Jun 2026) — A pillar score may only move below 0.5
    (toward authentic) if the analyser found positive evidence of authenticity. Absence of
@@ -214,6 +222,21 @@ further implementation or data access.
      score = 0.5  — ran fully; nothing suspicious; no positive authentic verification
      score < 0.5  — positive authentic signal (earned, not default)
      score = None — insufficient data or unavailable; excluded from denominator
+
+8. **§3.33 Fusion weights** (22 Jun 2026) — Verdict pillars: deepfake 0.60, audio 0.35,
+   c2pa ~0.40 reserved (stub, always None → excluded). Active denominator max: 0.95.
+   Source Details pillars (metadata, source_rep, source_beh) run on every job but are
+   excluded from the fusion denominator — they feed the evidence card only. This reflects
+   that platform re-encoding destroys artifact metadata and behavioural signals are
+   too thin at prototype scale to carry verdict weight.
+
+9. **Self-adjusting denominator** — if a verdict pillar returns `score=None` (e.g. deepfake
+   returns `status=no_face`), its weight is excluded from the denominator entirely. The
+   remaining active pillars normalise to 1.0 automatically. No fixed denominator assumption.
+
+10. **Source Details section** — metadata, source_rep, and source_beh display in a separate
+    "Source Details" section on the verdict page, clearly labelled "Contextual signals —
+    not verdict-determining". They do not affect the confidence meter or verdict band.
 
 ---
 
