@@ -71,6 +71,7 @@ async def run_deepfake(video_path: str) -> dict:
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
+        print(f"[deepfake] DEBUG video_metrics children sample: {item['video_metrics'].get('children', 'KEY_MISSING')[:1]}", flush=True)
 
         # Extract VideoFrameResult leaf scores from two-level children hierarchy
         frame_scores = [
