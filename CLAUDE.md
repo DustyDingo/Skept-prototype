@@ -78,13 +78,18 @@ User submits URL → backend creates `job_id` → frontend polls `/api/status/{j
 
 Score uses soft ceiling of 0.65 — metadata alone cannot return a fully manipulated verdict.
 
-### Stage 2 — Deepfake Detection (Replicate)
-`analysers/deepfake.py` — extracts N evenly-spaced frames, submits all frames to Replicate concurrently via asyncio.gather().
-Returns mean, peak, high-confidence frame count, and `high_variance` flag.
-Frame confidence scalar applied before score exits analyser: `frame_confidence = len(valid_scores) / total_frames_sampled`. Pillar score multiplied by scalar — prevents a single high-probability frame carrying full fusion weight. `frame_confidence` included in returned dict. For non-human-subject content (e.g. animal videos), scalar will suppress score toward authentic because the faceswap model rarely detects human faces in animal-subject frames — expected behaviour; Phase 1 content-type guard queued.
+### Stage 2 — Deepfake Detection (Resemble AI)
+`analysers/deepfake.py` — submits video to Resemble AI DETECT-3B Omni video endpoint.
+Returns `video_metrics` with top-level `score`, `certainty`, and `children` (per-frame `VideoFrameResult` nodes).
+
+**Scoring model (§3.36, 22 Jun 2026):**
+- Frame score: certainty-weighted mean across `VideoFrameResult` nodes — `Σ(frame_score × frame_certainty) / Σ(frame_certainty)`
+- Final pillar score: `frame_weighted_mean × (0.5 + video_metrics.certainty × 0.5)` — top-level certainty applied as scalar
+- Fallback: if `Σ(certainty) == 0` or no valid frames, use `video_metrics.score` directly; logs `frame_certainty_fallback=True`
+- Low-coverage guard: `< 2` valid frames → `status=low_coverage`, `score=None`, excluded from fusion
 
 `high_variance=True` when `stdev(frame_scores) > 0.25` — indicates split-screen or multi-subject
-content where the faceswap model may be firing on scene cuts rather than actual manipulation.
+content where the model may be firing on scene cuts rather than actual manipulation.
 Surfaces a caution note in the evidence card when fired.
 
 ### Stage 3 — Source Reputation
@@ -104,6 +109,7 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 `analysers/audio.py` — two-path scoring model:
 - **Primary path:** Resemble AI voice clone classifier via `RESEMBLE_API_TOKEN`. Raw score converted: `suspicion = (raw + 1.0) / 2.0`. Sub-scores and final pillar score clamped to [0.0, 1.0]. Minimum composite floor: 0.15 (prevents audio zeroing the pillar on definitively-real content).
 - **Fallback path:** librosa heuristics (pitch variance, spectral flatness, ZCR variance) when Resemble unavailable or returns 402.
+- **Consistency scalar (§3.36, 22 Jun 2026):** `item.metrics.consistency` (float, 0–100) parsed from Resemble response and applied as scalar: `audio_final = blended_score × (0.5 + consistency/100 × 0.5)`, clamped to [0.0, 1.0]. Applied after the Resemble + librosa blend. If `consistency` is missing or None, treated as 100.0 (no penalty).
 - Weight: 0.20. Fusion denominator: 0.98 (C2PA excluded).
 
 **Observability (§3.28 resolved):** `audio.py` now logs librosa sub-scores (pitch variance, spectral flatness, ZCR variance) when the fallback path fires. `fusion.py` now logs score, denominator, and per-pillar weighted contributions for every job.
@@ -186,6 +192,9 @@ further implementation or data access.
 |---|---|---|
 | YouTube ingestion | Bot detection blocks yt-dlp on some clips | Phase A workaround: `--extractor-args "youtube:player_client=android"`; Phase B: bgutil PO token plugin + residential proxy |
 | Audio/fusion logging | ✅ Resolved — per-job [audio] librosa sub-scores and [fusion] score/denominator/per-pillar breakdown now emitted to Railway logs (18 Jun 2026, §3.28). | — |
+| §3.31 — Subject list missing Trump QID | Trump QID hardcoded in SPARQL query in HEAD but absent from live subject list at runtime. Per-call NER log pending confirmation. | Confirm live subject list contents via Railway log; re-check SPARQL BIND clause. |
+| §3.39 — Frame count display bug (UI) | Evidence card shows "N of M sampled frames scored" in incorrect order. No scoring impact. | Fix display string ordering in frontend. |
+| §3.40 — Asymmetric exclusion transparency gap (UI) | When `audio_dubbing_pattern` fires, deepfake score appears in evidence card but is excluded from fusion. User sees a number that did not affect the verdict with no indication of this. Backend correct. | Add UI indicator (e.g. strikethrough or "excluded" badge) when pillar is asymmetrically excluded. |
 
 ---
 
@@ -237,6 +246,16 @@ further implementation or data access.
 10. **Source Details section** — metadata, source_rep, and source_beh display in a separate
     "Source Details" section on the verdict page, clearly labelled "Contextual signals —
     not verdict-determining". They do not affect the confidence meter or verdict band.
+
+11. **Asymmetric fusion exclusion** (§3.37, 22 Jun 2026) — when `audio_dubbing_pattern` fires
+    (audio score > 0.65 and deepfake score < 0.40), the deepfake pillar is excluded from the
+    fusion denominator to prevent an authentic-leaning video score from diluting a strong audio
+    manipulation signal. Backend logic is correct; two known UI gaps remain open:
+    - **§3.39** (UI bug): frame count display reads "N of M sampled frames scored" in incorrect
+      order. No scoring impact. Fix pending.
+    - **§3.40** (transparency gap): UI shows the deepfake score in the evidence card but does
+      not indicate it was excluded from fusion. User sees a number that did not contribute to
+      the verdict. Fix pending.
 
 ---
 
