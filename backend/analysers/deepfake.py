@@ -141,7 +141,7 @@ async def run_deepfake(video_path: str) -> dict:
         signals = [
             {
                 "label":      "Frame coverage",
-                "value":      f"{valid_frame_count} of {FRAMES_TO_SAMPLE} sampled frames scored",
+                "value":      f"{FRAMES_TO_SAMPLE} frames sampled · {valid_frame_count} scored by Resemble",
                 "weight":     "info",
                 "suspicious": False,
             },
