@@ -71,14 +71,29 @@ async def run_deepfake(video_path: str) -> dict:
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
-        print(f"[deepfake] DEBUG video_metrics children sample: {item['video_metrics'].get('children', 'KEY_MISSING')[:1]}", flush=True)
 
-        # Extract VideoFrameResult leaf scores from two-level children hierarchy
+        # Safety guard: empty VideoResult wrapper or empty VideoChunkResult list → low_coverage
+        if not children or not children[0].get("children"):
+            print(f"[deepfake] guard=low_coverage reason=empty_children result=excluded", flush=True)
+            logger.warning("[deepfake] status=low_coverage reason=empty_children score=None")
+            return {
+                "status":           "low_coverage",
+                "score":            None,
+                "frame_confidence": 0.0,
+                "signals":          [],
+                "summary":          "Insufficient frame data from Resemble — deepfake analysis excluded.",
+                "high_variance":    False,
+            }
+
+        # Navigate: video_metrics.children[0] = VideoResult
+        #           VideoResult.children       = list of VideoChunkResult
+        #           VideoChunkResult.children  = list of VideoFrameResult
+        chunks = children[0]["children"]
         frame_scores = [
-            float(c["score"])
-            for child in children
-            for c in child.get("children", [])
-            if c.get("type") == "VideoFrameResult" and c.get("score") is not None
+            float(frame["score"])
+            for chunk in chunks
+            for frame in chunk.get("children", [])
+            if frame.get("score") is not None
         ]
 
         # Non-human content guard
