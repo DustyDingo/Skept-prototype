@@ -62,9 +62,7 @@ def fuse(
         "audio":             audio or {},
     }
 
-    scores        = {}
-    total_weight  = 0.0
-    weighted_sum  = 0.0
+    scores = {}
 
     # §3.30 — Pillar scoring principle
     # A pillar score may only move below 0.5 (toward authentic) if the analyser
@@ -76,16 +74,43 @@ def fuse(
     #   score = 0.5   — ran fully; no suspicious signal; no positive authentic verification
     #   score < 0.5   — positive authentic signal (earned, not default)
     #   score = None  — insufficient data or unavailable; excluded from denominator
-    for key, weight in WEIGHTS.items():
+    for key in WEIGHTS:
         analyser = analyser_map[key]
         if analyser.get("status") in ("complete", "skipped"):
             score = analyser.get("score")
             if score is None:
                 continue
-            score         = max(0.0, min(1.0, score))
-            scores[key]   = score
-            weighted_sum += score * weight
-            total_weight += weight
+            scores[key] = max(0.0, min(1.0, score))
+
+    # §3.37 — Asymmetric exclusion for audio-dubbing pattern
+    # When the visual classifier votes strongly authentic (<0.10) but audio votes
+    # suspicious (>0.60), the faceswap model has no meaningful signal on dubbed
+    # content. Exclude deepfake from the denominator so the audio signal carries
+    # the verdict at its normalised weight. The deepfake score is still returned
+    # in the job result dict and shown in the evidence card.
+    _deepfake_s = scores.get("deepfake")
+    _audio_s    = scores.get("audio")
+    asymmetric_exclusion = (
+        _deepfake_s is not None
+        and _deepfake_s < 0.10
+        and _audio_s is not None
+        and _audio_s > 0.60
+    )
+    if asymmetric_exclusion:
+        print(
+            f"[fusion] asymmetric_exclusion=True deepfake={_deepfake_s:.4f}"
+            f" audio={_audio_s:.4f} reason=audio_dubbing_pattern",
+            flush=True,
+        )
+
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for key, score in scores.items():
+        if asymmetric_exclusion and key == "deepfake":
+            continue
+        weight        = WEIGHTS[key]
+        weighted_sum += score * weight
+        total_weight += weight
 
     if total_weight == 0:
         return _error_verdict("No analysers produced results.")
