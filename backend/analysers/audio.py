@@ -73,7 +73,7 @@ async def analyse(video_path: str) -> dict:
             pitch_score = flatness_score = zcr_score = None
             heuristics_available = False
 
-        classifier_score, classifier_label, classifier_segments, resemble_raw_score = await classifier_task
+        classifier_score, classifier_label, classifier_segments, resemble_raw_score, consistency = await classifier_task
 
         # Compute mean of whichever heuristic scores are not None
         valid_h = [s for s in (pitch_score, flatness_score, zcr_score) if s is not None]
@@ -104,7 +104,12 @@ async def analyse(video_path: str) -> dict:
         print(f"[audio] path={_path} classifier_score={classifier_score} heuristics_mean={heuristics_mean}", flush=True)
 
         if score is not None:
-            score = min(1.0, score)
+            raw_consistency        = float(consistency) if consistency is not None else 100.0
+            consistency_normalised = max(0.0, min(1.0, raw_consistency / 100.0))
+            consistency_scalar     = 0.5 + consistency_normalised * 0.5
+            audio_final            = max(0.0, min(1.0, score * consistency_scalar))
+            print(f"[audio] consistency={raw_consistency:.2f} consistency_scalar={consistency_scalar:.4f} final_score={audio_final:.4f}", flush=True)
+            score = round(audio_final, 4)
 
         resemble_used = classifier_score is not None
         _score_str = f"{score:.3f}" if score is not None else "None"
@@ -161,9 +166,9 @@ async def analyse(video_path: str) -> dict:
 
 async def _resemble_detect(
     audio_path: str,
-) -> tuple[float | None, str | None, list | None, float | None]:
+) -> tuple[float | None, str | None, list | None, float | None, float | None]:
     if not RESEMBLE_API_TOKEN:
-        return None, None, None, None
+        return None, None, None, None, None
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             with open(audio_path, "rb") as f:
@@ -182,35 +187,37 @@ async def _resemble_detect(
             logger.warning(
                 "[audio] Resemble API returned %d: %r", resp.status_code, resp.text[:200]
             )
-            return None, None, None, None
+            return None, None, None, None, None
 
         data = resp.json()
         logger.info("[audio] Resemble raw response: %s", data)
         try:
             if not data.get("success"):
                 logger.warning("[audio] Resemble success=false: %r", resp.text[:300])
-                return None, None, None, None
+                return None, None, None, None, None
 
             metrics   = data["item"]["metrics"]
             raw_score = metrics.get("aggregated_score")
             if raw_score is None:
                 logger.warning("[audio] Resemble returned no aggregated_score — routing to librosa fallback")
-                return None, None, None, None
+                return None, None, None, None, None
             if float(raw_score) == -1.0:
                 logger.warning("[audio] Resemble returned no-signal score (aggregated_score=%r) — routing to librosa fallback", raw_score)
-                return None, None, None, float(raw_score)
+                return None, None, None, float(raw_score), None
             resemble_suspicion  = (float(raw_score) + 1.0) / 2.0
             classifier_score    = round(max(0.0, min(1.0, resemble_suspicion)), 4)
             classifier_label    = metrics.get("label")
-            classifier_segments = [float(s) for s in metrics.get("score", []) if s is not None]
-            return classifier_score, classifier_label, classifier_segments, float(raw_score)
+            classifier_segments  = [float(s) for s in metrics.get("score", []) if s is not None]
+            _raw_consistency     = metrics.get("consistency")
+            consistency          = float(_raw_consistency) if _raw_consistency is not None else None
+            return classifier_score, classifier_label, classifier_segments, float(raw_score), consistency
         except Exception as e:
             logger.warning("[audio] Resemble classifier unavailable: %s — heuristics only", e)
-            return None, None, None, None
+            return None, None, None, None, None
 
     except Exception as e:
         logger.warning("[audio] Resemble API error: %s", e)
-        return None, None, None, None
+        return None, None, None, None, None
 
 
 def _librosa_heuristics(

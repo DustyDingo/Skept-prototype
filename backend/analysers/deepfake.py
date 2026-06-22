@@ -132,6 +132,18 @@ async def run_deepfake(video_path: str) -> dict:
             pillar_score_raw, valid_frame_count, FRAMES_TO_SAMPLE, scalar, final_score, high_variance,
         )
 
+        # Option A: top-level certainty scalar (§3.36)
+        certainty        = video_metrics.get("certainty")
+        certainty_val    = float(certainty) if certainty is not None else 1.0
+        certainty_scalar = 0.5 + certainty_val * 0.5
+        deepfake_final   = round(max(0.0, min(1.0, final_score * certainty_scalar)), 3)
+        print(
+            f"[deepfake] certainty={certainty_val:.4f} "
+            f"certainty_scalar={certainty_scalar:.4f} "
+            f"final_score={deepfake_final:.4f}",
+            flush=True,
+        )
+
         signals = [
             {
                 "label":      "Frame coverage",
@@ -173,7 +185,7 @@ async def run_deepfake(video_path: str) -> dict:
 
         return {
             "status":           "complete",
-            "score":            final_score,
+            "score":            deepfake_final,
             "signals":          signals,
             "summary":          summary,
             "frames_sampled":   valid_frame_count,
