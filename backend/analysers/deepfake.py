@@ -112,31 +112,10 @@ async def run_deepfake(video_path: str) -> dict:
             }
         print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=pass", flush=True)
 
-        # Static-synthetic content guard (AI-generated still image packaged as video)
         stdev_val = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
-        if pillar_score_raw < 0.05 and stdev_val < 0.005 and valid_frame_count > 10:
-            print(
-                f"[deepfake] guard=static_synthetic score={pillar_score_raw:.4f} "
-                f"stdev={stdev_val:.4f} frames={valid_frame_count} result=excluded",
-                flush=True,
-            )
-            return {
-                "status":           "static_image",
-                "content_type":     "static_image",
-                "score":            None,
-                "frame_confidence": 0.0,
-                "signals":          [],
-                "summary":          "Video appears to be a static image — visual frame deepfake analysis not applicable. Audio analysis is the primary signal.",
-                "high_variance":    False,
-            }
-        print(
-            f"[deepfake] guard=static_synthetic score={pillar_score_raw:.4f} "
-            f"stdev={stdev_val:.4f} frames={valid_frame_count} result=pass",
-            flush=True,
-        )
 
         # Frame confidence scalar and final score
-        scalar      = valid_frame_count / FRAMES_TO_SAMPLE
+        scalar      = min(valid_frame_count / FRAMES_TO_SAMPLE, 1.0)
         final_score = round(pillar_score_raw * scalar, 3)
 
         # High-variance detection (reuses stdev_val computed above)
