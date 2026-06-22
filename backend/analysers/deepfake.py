@@ -85,19 +85,17 @@ async def run_deepfake(video_path: str) -> dict:
                 "high_variance":    False,
             }
 
-        # Navigate: video_metrics.children[0] = VideoResult
-        #           VideoResult.children       = list of VideoChunkResult
-        #           VideoChunkResult.children  = list of VideoFrameResult
+        # Frame scalar replaced by certainty-weighted mean (§3.36 Option B)
         chunks = children[0]["children"]
-        frame_scores = [
-            float(frame["score"])
+        frame_data = [
+            (float(frame["score"]), float(frame["certainty"]))
             for chunk in chunks
             for frame in chunk.get("children", [])
-            if frame.get("score") is not None
+            if frame.get("score") is not None and frame.get("certainty") is not None
         ]
 
         # Non-human content guard
-        valid_frame_count = len(frame_scores)
+        valid_frame_count = len(frame_data)
         if valid_frame_count <= 1:
             print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=excluded", flush=True)
             logger.info("[deepfake] status=non_human frames=%d score=None", valid_frame_count)
@@ -112,34 +110,30 @@ async def run_deepfake(video_path: str) -> dict:
             }
         print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=pass", flush=True)
 
-        stdev_val = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
+        frame_scores = [s for s, c in frame_data]
+        stdev_val    = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
 
-        # Frame confidence scalar and final score
-        scalar      = min(valid_frame_count / FRAMES_TO_SAMPLE, 1.0)
-        final_score = round(pillar_score_raw * scalar, 3)
+        # Certainty-weighted mean of frame scores
+        total_certainty = sum(c for _, c in frame_data)
+        if total_certainty == 0:
+            weighted_score = pillar_score_raw
+            print("[deepfake] frame_certainty_fallback=True", flush=True)
+            logger.warning("[deepfake] frame_certainty_fallback=True total_certainty=0")
+        else:
+            weighted_score = sum(s * c for s, c in frame_data) / total_certainty
 
-        # High-variance detection (reuses stdev_val computed above)
+        # High-variance detection
         high_variance = stdev_val > 0.25
-
-        print(
-            f"[deepfake] resemble_score={pillar_score_raw:.4f} "
-            f"frames={valid_frame_count}/{FRAMES_TO_SAMPLE} "
-            f"scalar={scalar:.4f} final={final_score:.4f}",
-            flush=True,
-        )
-        logger.info(
-            "[deepfake] resemble_score=%.4f frames=%d/%d scalar=%.4f final=%.4f high_variance=%s",
-            pillar_score_raw, valid_frame_count, FRAMES_TO_SAMPLE, scalar, final_score, high_variance,
-        )
 
         # Option A: top-level certainty scalar (§3.36)
         certainty        = video_metrics.get("certainty")
         certainty_val    = float(certainty) if certainty is not None else 1.0
         certainty_scalar = 0.5 + certainty_val * 0.5
-        deepfake_final   = round(max(0.0, min(1.0, final_score * certainty_scalar)), 3)
+        deepfake_final   = round(max(0.0, min(1.0, weighted_score * certainty_scalar)), 3)
         print(
-            f"[deepfake] certainty={certainty_val:.4f} "
-            f"certainty_scalar={certainty_scalar:.4f} "
+            f"[deepfake] valid_frames={valid_frame_count} "
+            f"certainty_weighted_score={weighted_score:.4f} "
+            f"certainty={certainty_val:.4f} "
             f"final_score={deepfake_final:.4f}",
             flush=True,
         )
@@ -152,16 +146,10 @@ async def run_deepfake(video_path: str) -> dict:
                 "suspicious": False,
             },
             {
-                "label":      "Frame confidence scalar",
-                "value":      f"{scalar:.0%}",
-                "weight":     "info",
-                "suspicious": False,
-            },
-            {
                 "label":      "Video suspicion score",
-                "value":      f"{pillar_score_raw:.0%}",
+                "value":      f"{weighted_score:.0%}",
                 "weight":     "high",
-                "suspicious": pillar_score_raw > 0.5,
+                "suspicious": weighted_score > 0.5,
             },
         ]
 
@@ -176,12 +164,12 @@ async def run_deepfake(video_path: str) -> dict:
                 "suspicious": False,
             })
 
-        if pillar_score_raw < 0.3:
-            summary = f"Video analysis found no deepfake indicators ({pillar_score_raw:.0%} suspicion score)."
-        elif pillar_score_raw < 0.6:
-            summary = f"Video analysis inconclusive — {pillar_score_raw:.0%} suspicion score across {valid_frame_count} frames."
+        if weighted_score < 0.3:
+            summary = f"Video analysis found no deepfake indicators ({weighted_score:.0%} suspicion score)."
+        elif weighted_score < 0.6:
+            summary = f"Video analysis inconclusive — {weighted_score:.0%} suspicion score across {valid_frame_count} frames."
         else:
-            summary = f"Video analysis flags deepfake characteristics — {pillar_score_raw:.0%} suspicion score."
+            summary = f"Video analysis flags deepfake characteristics — {weighted_score:.0%} suspicion score."
 
         return {
             "status":           "complete",
@@ -189,7 +177,7 @@ async def run_deepfake(video_path: str) -> dict:
             "signals":          signals,
             "summary":          summary,
             "frames_sampled":   valid_frame_count,
-            "frame_confidence": scalar,
+            "frame_confidence": valid_frame_count / max(FRAMES_TO_SAMPLE, 1),
             "high_variance":    high_variance,
         }
 
