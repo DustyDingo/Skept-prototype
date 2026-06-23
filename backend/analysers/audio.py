@@ -80,27 +80,31 @@ async def analyse(video_path: str) -> dict:
         heuristics_mean = round(sum(valid_h) / len(valid_h), 3) if valid_h else None
 
         # Pillar fusion
-        if classifier_score is not None and heuristics_mean is not None:
+        # -1.0 from Resemble means "no analysable speech" — not a detection error.
+        # Skip librosa in this case; librosa only fires on genuine Resemble errors.
+        resemble_no_speech = (resemble_raw_score is not None and float(resemble_raw_score) == -1.0)
+
+        if resemble_no_speech:
+            score          = None
+            low_confidence = True
+            _path          = "no_speech_wav"
+            print("[audio] Resemble audio.wav sentinel (-1.0) — no speech detected — score=None", flush=True)
+        elif classifier_score is not None and heuristics_mean is not None:
             score          = round(classifier_score * 0.70 + heuristics_mean * 0.30, 3)
             low_confidence = False
+            _path          = "resemble_primary+librosa"
         elif classifier_score is not None:
             score          = classifier_score
             low_confidence = False
+            _path          = "resemble_primary"
         elif heuristics_mean is not None:
             score          = 0.5
             low_confidence = True
+            _path          = "librosa_fallback"
         else:
             score          = None
             low_confidence = True
-
-        if classifier_score is not None and heuristics_mean is not None:
-            _path = "resemble_primary+librosa"
-        elif classifier_score is not None:
-            _path = "resemble_primary"
-        elif heuristics_mean is not None:
-            _path = "librosa_fallback"
-        else:
-            _path = "no_signal"
+            _path          = "no_signal"
         print(f"[audio] path={_path} classifier_score={classifier_score} heuristics_mean={heuristics_mean}", flush=True)
 
         if score is not None:
@@ -124,10 +128,10 @@ async def analyse(video_path: str) -> dict:
 
         if not RESEMBLE_API_TOKEN:
             _rs = "n/a"
+        elif resemble_no_speech:
+            _rs = "no_speech"
         elif classifier_score is not None:
             _rs = "ok"
-        elif resemble_raw_score is not None and resemble_raw_score == -1.0:
-            _rs = "no_signal"
         else:
             _rs = "error"
         _raw_str = str(resemble_raw_score) if resemble_raw_score is not None else "n/a"
@@ -145,6 +149,7 @@ async def analyse(video_path: str) -> dict:
             "zcr_variance_score":      zcr_score,
             "heuristics_available":    heuristics_available,
             "resemble_consistency":    consistency,
+            "resemble_status":         _rs,
             "audio_extracted":         True,
             "error":                   None,
             "signals":                 signals,
