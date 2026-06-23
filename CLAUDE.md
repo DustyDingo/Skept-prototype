@@ -80,13 +80,17 @@ Score uses soft ceiling of 0.65 — metadata alone cannot return a fully manipul
 
 ### Stage 2 — Deepfake Detection (Resemble AI)
 `analysers/deepfake.py` — submits video to Resemble AI DETECT-3B Omni video endpoint.
-Returns `video_metrics` with top-level `score`, `certainty`, and `children` (per-frame `VideoFrameResult` nodes).
+Returns `video_metrics` with top-level `score`, `certainty`, and `children` (VideoChunkResult nodes, each containing ImageResult children).
+
+**Frame count fields (§3.48):**
+- `resemble_frame_count` — count of ImageResult nodes Resemble returns from its internal analysis of the submitted clip. Typically much larger than `SKEPT_FRAMES` (e.g. 100 nodes for a 12s clip). Logged as `resemble_frame_count=` in every deepfake log line alongside `skept_frames=`.
+- `skept_frames` — number of frames Skept requested via `SKEPT_FRAMES` env var (default 6). The ratio `resemble_frame_count / SKEPT_FRAMES` is not used in any scoring formula.
 
 **Scoring model (§3.36, 22 Jun 2026):**
-- Frame score: certainty-weighted mean across `VideoFrameResult` nodes — `Σ(frame_score × frame_certainty) / Σ(frame_certainty)`
-- Final pillar score: `frame_weighted_mean × (0.5 + video_metrics.certainty × 0.5)` — top-level certainty applied as scalar
-- Fallback: if `Σ(certainty) == 0` or no valid frames, use `video_metrics.score` directly; logs `frame_certainty_fallback=True`
-- Low-coverage guard: `< 2` valid frames → `status=low_coverage`, `score=None`, excluded from fusion
+- Frame score: certainty-weighted mean across all ImageResult nodes — `Σ(frame_score × frame_certainty) / Σ(frame_certainty)`. Uses Resemble's full internal frame set (`resemble_frame_count`), not `SKEPT_FRAMES`.
+- Final pillar score: `frame_weighted_mean × (0.5 + video_metrics.certainty × 0.5)` — top-level certainty value applied as scalar (range 0.5–1.0)
+- Fallback: if `Σ(frame_certainty) == 0` or no valid frames, use `video_metrics.score` directly; logs `frame_certainty_fallback=True`
+- Low-coverage guard: `resemble_frame_count < 2` → `status=low_coverage`, `score=None`, excluded from fusion
 
 `high_variance=True` when `stdev(frame_scores) > 0.25` — indicates split-screen or multi-subject
 content where the model may be firing on scene cuts rather than actual manipulation.
@@ -160,7 +164,7 @@ Denominator self-adjusts: if a verdict pillar returns None, remaining weights no
 | Source reputation | ✅ Active (Source Details only) | §3.33: excluded from fusion denominator. Shown in Source Details section. Instagram: 1/5 signals; low-confidence badge shown. |
 | Source behaviour & bio | ✅ Active (Source Details only) | §3.33: excluded from fusion denominator. Shown in Source Details section. Bio link check only. |
 | C2PA provenance | ⏭ Stub | `score: None`, excluded from denominator — Phase 1. |
-| Frame-level deepfake | ✅ Active | §3.33: Resemble AI DETECT-3B Omni video endpoint; weight 0.60. Per-frame coverage scalar from `video_metrics.children`. Non-human guard: ≤1 subject frame → `status=non_human`, `score=None`. Low coverage: <2 scored frames → `status=low_coverage`, `score=None`. |
+| Frame-level deepfake | ✅ Active | §3.33: Resemble AI DETECT-3B Omni video endpoint; weight 0.60. Certainty-weighted mean across Resemble's ImageResult nodes (`resemble_frame_count`); top-level `video_metrics.certainty` applied as scalar. Non-human guard: ≤1 ImageResult node → `status=non_human`, `score=None`. Low coverage: <2 ImageResult nodes → `status=low_coverage`, `score=None`. |
 | Audio & voice clone | ✅ Active (partial) | §3.33: weight 0.35. Resemble AI voice clone classifier primary; librosa heuristics fallback. §3.30: Resemble path → authentic lean permissible; librosa-only fallback → score 0.5 neutral. |
 | Pixel-level forensics | ⏳ Not wired | Backlog |
 
@@ -180,7 +184,7 @@ further implementation or data access.
 | Audio heuristic calibration | Pitch/flatness/ZCR thresholds are hand-tuned; no ground-truth validation yet | Calibrate against known TTS samples once live on real clips |
 | Frame sampler scene-blind | Uniform sampling misses cut-points; split-screen reels produce high-variance sets | Phase 1: ffmpeg `select='gt(scene,0.4)'` scene-change sampler |
 | C2PA | Stub by design; weight reserved | Phase 1: c2pa-rs implementation |
-| Deepfake — non-human content | Faceswap model has no meaningful signal on animal-subject content; frame confidence scalar suppresses score toward authentic correctly but evidence card does not communicate the limitation | Phase 1: content-type guard — if ≤1 frame scores a human face, set `content_type: non_human` and render pillar as "no human face detected — result not meaningful" |
+| Deepfake — non-human content | Faceswap model has no meaningful signal on animal-subject content; low `resemble_frame_count` (≤1 ImageResult node) triggers `status=non_human` correctly but evidence card does not communicate the limitation | Phase 1: content-type guard — if ≤1 frame scores a human face, set `content_type: non_human` and render pillar as "no human face detected — result not meaningful" |
 | Audio — Resemble fallback | `RESEMBLE_API_TOKEN` missing from Railway Variables causes librosa-only path; minimum floor 0.15 clamps result | Add RESEMBLE_API_TOKEN to Railway Variables |
 | Deepfake — per-frame latency | ✅ Resolved — concurrent submission via asyncio.gather() (18 Jun 2026). Total Stage 2 time ~40s vs ~156s sequential. Cold-start absorbed once across batch. | — |
 | §3.32 — Deepfake under-detection on TikTok-compressed faceswap (19 Jun 2026) | @dextergilmore66 Trump faceswap clip returns 28% (Likely Authentic) despite visually obvious body-replacement composite. All three scored frames returned sub-50% probabilities (peak 41%). Likely cause: TikTok re-encoding degrades splice artefacts below detection threshold. Open calibration gap — track before Phase 1/TestFlight. | Mitigations under consideration: increase SKEPT_FRAMES, bias sampling toward first 30–40% of clip, evaluate alternative models. |

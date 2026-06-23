@@ -191,10 +191,10 @@ async def run_deepfake(video_path: str) -> dict:
         ]
 
         # Non-human content guard
-        valid_frame_count = len(frame_data)
-        if valid_frame_count <= 1:
-            print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=excluded", flush=True)
-            logger.info("[deepfake] status=non_human frames=%d score=None", valid_frame_count)
+        resemble_frame_count = len(frame_data)
+        if resemble_frame_count <= 1:
+            print(f"[deepfake] guard=non_human resemble_frame_count={resemble_frame_count} skept_frames={FRAMES_TO_SAMPLE} result=excluded", flush=True)
+            logger.info("[deepfake] status=non_human resemble_frame_count=%d score=None", resemble_frame_count)
             return {
                 "status":                "non_human",
                 "content_type":          "non_human",
@@ -206,7 +206,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "video_job_audio_score": video_job_audio_score,
                 **sample_meta,
             }
-        print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=pass", flush=True)
+        print(f"[deepfake] guard=non_human resemble_frame_count={resemble_frame_count} skept_frames={FRAMES_TO_SAMPLE} result=pass", flush=True)
 
         frame_scores = [s for s, c in frame_data]
         stdev_val    = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
@@ -229,7 +229,8 @@ async def run_deepfake(video_path: str) -> dict:
         certainty_scalar = 0.5 + certainty_val * 0.5
         deepfake_final   = round(max(0.0, min(1.0, weighted_score * certainty_scalar)), 3)
         print(
-            f"[deepfake] valid_frames={valid_frame_count} "
+            f"[deepfake] resemble_frame_count={resemble_frame_count} "
+            f"skept_frames={FRAMES_TO_SAMPLE} "
             f"certainty_weighted_score={weighted_score:.4f} "
             f"certainty={certainty_val:.4f} "
             f"final_score={deepfake_final:.4f}",
@@ -239,7 +240,7 @@ async def run_deepfake(video_path: str) -> dict:
         signals = [
             {
                 "label":      "Frame coverage",
-                "value":      f"{FRAMES_TO_SAMPLE} frames sampled · {valid_frame_count} scored by Resemble",
+                "value":      f"{FRAMES_TO_SAMPLE} frames sampled · {resemble_frame_count} scored by Resemble",
                 "weight":     "info",
                 "suspicious": False,
             },
@@ -266,7 +267,7 @@ async def run_deepfake(video_path: str) -> dict:
         if weighted_score < 0.3:
             summary = f"Video analysis found no deepfake indicators ({weighted_score:.0%} suspicion score)."
         elif weighted_score < 0.6:
-            summary = f"Video analysis inconclusive — {weighted_score:.0%} suspicion score across {valid_frame_count} frames."
+            summary = f"Video analysis inconclusive — {weighted_score:.0%} suspicion score across {resemble_frame_count} frames."
         else:
             summary = f"Video analysis flags deepfake characteristics — {weighted_score:.0%} suspicion score."
 
@@ -275,8 +276,8 @@ async def run_deepfake(video_path: str) -> dict:
             "score":                 deepfake_final,
             "signals":               signals,
             "summary":               summary,
-            "frames_sampled":        valid_frame_count,
-            "frame_confidence":      valid_frame_count / max(FRAMES_TO_SAMPLE, 1),
+            "frames_sampled":        resemble_frame_count,
+            "frame_confidence":      resemble_frame_count / max(FRAMES_TO_SAMPLE, 1),
             "high_variance":         high_variance,
             "video_job_audio_score": video_job_audio_score,
             **sample_meta,
