@@ -65,9 +65,21 @@ async def run_deepfake(video_path: str) -> dict:
         pillar_label     = video_metrics.get("label")
         children         = video_metrics.get("children") or []
 
+        # Extract embedded audio score from the video job response (§3.42)
+        _audio_raw = item.get("metrics", {}).get("aggregated_score")
+        if _audio_raw is not None:
+            _audio_raw_f = float(_audio_raw)
+            video_job_audio_score = (
+                None if _audio_raw_f == -1.0
+                else round(max(0.0, min(1.0, (_audio_raw_f + 1.0) / 2.0)), 4)
+            )
+        else:
+            video_job_audio_score = None
+        print(f"[deepfake] video_job_audio_score={video_job_audio_score}", flush=True)
+
         if pillar_score_raw is None:
             logger.warning("[deepfake] no video_metrics.score in Resemble response")
-            return _error_result("No video_metrics.score in Resemble response")
+            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score}
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
@@ -77,12 +89,13 @@ async def run_deepfake(video_path: str) -> dict:
             print(f"[deepfake] guard=low_coverage reason=empty_children result=excluded", flush=True)
             logger.warning("[deepfake] status=low_coverage reason=empty_children score=None")
             return {
-                "status":           "low_coverage",
-                "score":            None,
-                "frame_confidence": 0.0,
-                "signals":          [],
-                "summary":          "Insufficient frame data from Resemble — deepfake analysis excluded.",
-                "high_variance":    False,
+                "status":                "low_coverage",
+                "score":                 None,
+                "frame_confidence":      0.0,
+                "signals":               [],
+                "summary":               "Insufficient frame data from Resemble — deepfake analysis excluded.",
+                "high_variance":         False,
+                "video_job_audio_score": video_job_audio_score,
             }
 
         # Frame scalar replaced by certainty-weighted mean (§3.36 Option B)
@@ -100,13 +113,14 @@ async def run_deepfake(video_path: str) -> dict:
             print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=excluded", flush=True)
             logger.info("[deepfake] status=non_human frames=%d score=None", valid_frame_count)
             return {
-                "status":           "non_human",
-                "content_type":     "non_human",
-                "score":            None,
-                "frame_confidence": 0.0,
-                "signals":          [],
-                "summary":          "No human subject detected in video frames — deepfake analysis not applicable.",
-                "high_variance":    False,
+                "status":                "non_human",
+                "content_type":          "non_human",
+                "score":                 None,
+                "frame_confidence":      0.0,
+                "signals":               [],
+                "summary":               "No human subject detected in video frames — deepfake analysis not applicable.",
+                "high_variance":         False,
+                "video_job_audio_score": video_job_audio_score,
             }
         print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=pass", flush=True)
 
@@ -172,13 +186,14 @@ async def run_deepfake(video_path: str) -> dict:
             summary = f"Video analysis flags deepfake characteristics — {weighted_score:.0%} suspicion score."
 
         return {
-            "status":           "complete",
-            "score":            deepfake_final,
-            "signals":          signals,
-            "summary":          summary,
-            "frames_sampled":   valid_frame_count,
-            "frame_confidence": valid_frame_count / max(FRAMES_TO_SAMPLE, 1),
-            "high_variance":    high_variance,
+            "status":                "complete",
+            "score":                 deepfake_final,
+            "signals":               signals,
+            "summary":               summary,
+            "frames_sampled":        valid_frame_count,
+            "frame_confidence":      valid_frame_count / max(FRAMES_TO_SAMPLE, 1),
+            "high_variance":         high_variance,
+            "video_job_audio_score": video_job_audio_score,
         }
 
     except Exception as e:
@@ -188,23 +203,25 @@ async def run_deepfake(video_path: str) -> dict:
 
 def _error_result(reason: str) -> dict:
     return {
-        "status":  "error",
-        "score":   None,
-        "error":   reason,
-        "signals": [],
-        "summary": f"Video deepfake analysis unavailable — {reason}",
+        "status":                "error",
+        "score":                 None,
+        "error":                 reason,
+        "signals":               [],
+        "summary":               f"Video deepfake analysis unavailable — {reason}",
+        "video_job_audio_score": None,
     }
 
 
 def _no_token_result() -> dict:
     return {
-        "status":  "skipped",
-        "score":   0.5,
-        "signals": [{
+        "status":                "skipped",
+        "score":                 0.5,
+        "signals":               [{
             "label":      "RESEMBLE_API_TOKEN not configured",
             "value":      "Set RESEMBLE_API_TOKEN in Railway environment variables",
             "weight":     "high",
             "suspicious": False,
         }],
-        "summary": "Video deepfake analysis skipped — no Resemble API token configured.",
+        "summary":               "Video deepfake analysis skipped — no Resemble API token configured.",
+        "video_job_audio_score": None,
     }

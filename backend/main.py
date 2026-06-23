@@ -186,6 +186,37 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         deepfake_result = await run_deepfake(video_path)
         job["analysers"]["deepfake"] = deepfake_result
 
+        # §3.42 — Cross-compare audio.wav classifier score vs video-job embedded audio score.
+        # On audio-dub deepfakes (real video + cloned audio) the audio.wav job can read low
+        # while the video job's audio score reads high.  Use whichever is higher as the
+        # Resemble classifier input, then recompute the audio pillar blend + consistency scalar.
+        _vj_audio = deepfake_result.get("video_job_audio_score")
+        _wav_cls  = audio_result.get("classifier_score")
+        if _vj_audio is not None:
+            if _wav_cls is None or _vj_audio > _wav_cls:
+                _selected = "video_job"
+                _hscores  = [
+                    audio_result.get("pitch_variance_score"),
+                    audio_result.get("spectral_flatness_score"),
+                    audio_result.get("zcr_variance_score"),
+                ]
+                _valid_h = [s for s in _hscores if s is not None]
+                _hmean   = round(sum(_valid_h) / len(_valid_h), 3) if _valid_h else None
+                _blend   = round(_vj_audio * 0.70 + _hmean * 0.30, 3) if _hmean is not None else _vj_audio
+                _raw_cons     = audio_result.get("resemble_consistency")
+                _raw_cons     = float(_raw_cons) if _raw_cons is not None else 100.0
+                _cons_scalar  = 0.5 + max(0.0, min(1.0, _raw_cons / 100.0)) * 0.5
+                _new_score    = round(max(0.0, min(1.0, _blend * _cons_scalar)), 4)
+                audio_result  = {**audio_result, "score": _new_score, "classifier_score": _vj_audio, "video_job_audio_override": True}
+                job["analysers"]["audio"] = audio_result
+            else:
+                _selected = "audio_wav"
+            print(
+                f"[audio] audio_wav_score={_wav_cls} video_job_audio_score={_vj_audio} "
+                f"selected={_selected} (higher)",
+                flush=True,
+            )
+
         verdict = fuse(meta_result, rep_result, beh_result, c2pa_result, deepfake_result, audio_result)
         _df_s = deepfake_result.get("score")
         _au_s = audio_result.get("score") if audio_result else None

@@ -144,6 +144,7 @@ async def analyse(video_path: str) -> dict:
             "spectral_flatness_score": flatness_score,
             "zcr_variance_score":      zcr_score,
             "heuristics_available":    heuristics_available,
+            "resemble_consistency":    consistency,
             "audio_extracted":         True,
             "error":                   None,
             "signals":                 signals,
