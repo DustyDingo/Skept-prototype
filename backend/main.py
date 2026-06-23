@@ -218,9 +218,12 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
             )
 
         verdict = fuse(meta_result, rep_result, beh_result, c2pa_result, deepfake_result, audio_result)
-        _df_s = deepfake_result.get("score")
-        _au_s = audio_result.get("score") if audio_result else None
-        if _df_s is not None and _df_s < 0.10 and _au_s is not None and _au_s > 0.60:
+        _df_s    = deepfake_result.get("score")
+        _au_s    = audio_result.get("score") if audio_result else None
+        _vj_au_s = deepfake_result.get("video_job_audio_score")
+        _candidates = [s for s in [_au_s, _vj_au_s] if s is not None]
+        _effective_au_s = max(_candidates) if _candidates else None
+        if _df_s is not None and _df_s < 0.10 and _effective_au_s is not None and _effective_au_s > 0.60:
             job["analysers"]["deepfake"]["excluded_reason"] = "audio_dubbing_pattern"
         job["verdict"] = verdict
         job["state"] = "complete"
