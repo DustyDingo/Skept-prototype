@@ -8,9 +8,12 @@ frame confidence scalar, high-variance detection, and non-human content guard.
 Score is already [0.0, 1.0] — no inversion needed (unlike audio path).
 """
 
+import asyncio
+import json
 import logging
 import os
 import statistics
+import subprocess
 from pathlib import Path
 
 import httpx
@@ -29,22 +32,100 @@ print(
 )
 
 
+def _probe_duration(video_path: str) -> float | None:
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", video_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            dur = json.loads(result.stdout).get("format", {}).get("duration")
+            if dur:
+                return float(dur)
+    except Exception:
+        pass
+    return None
+
+
+def _sample_video(video_path: str, duration: float) -> tuple[str, dict]:
+    """Extract 6s from start and 6s centred on midpoint, concat into a single file.
+
+    Intermediate files are cleaned up before returning. Caller must delete the
+    returned path after Resemble submission.
+    """
+    workdir  = Path(video_path).parent
+    seg_a    = workdir / "df_seg_a.mp4"
+    seg_b    = workdir / "df_seg_b.mp4"
+    concat   = workdir / "df_concat.txt"
+    output   = workdir / "df_sampled.mp4"
+
+    b_start = duration / 2.0 - 3.0
+    b_end   = b_start + 6.0
+
+    subprocess.run(
+        ["ffmpeg", "-ss", "0", "-i", video_path, "-t", "6", "-c", "copy", str(seg_a), "-y", "-loglevel", "error"],
+        capture_output=True, timeout=60,
+    )
+    subprocess.run(
+        ["ffmpeg", "-ss", str(b_start), "-i", video_path, "-t", "6", "-c", "copy", str(seg_b), "-y", "-loglevel", "error"],
+        capture_output=True, timeout=60,
+    )
+    concat.write_text(f"file '{seg_a}'\nfile '{seg_b}'\n")
+    subprocess.run(
+        ["ffmpeg", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(output), "-y", "-loglevel", "error"],
+        capture_output=True, timeout=60,
+    )
+
+    for path in [seg_a, seg_b, concat]:
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+    meta = {
+        "sampled":               True,
+        "original_duration_sec": round(duration, 1),
+        "sample_strategy":       "start_mid_6s",
+        "segment_a_start":       0,
+        "segment_a_end":         6,
+        "segment_b_start":       round(b_start, 1),
+        "segment_b_end":         round(b_end, 1),
+    }
+    print(
+        f"[deepfake] sampled=True strategy=start_mid_6s "
+        f"original_duration={duration:.1f} "
+        f"seg_a=0-6 seg_b={b_start:.1f}-{b_end:.1f}",
+        flush=True,
+    )
+    return str(output), meta
+
+
 async def run_deepfake(video_path: str) -> dict:
     if not RESEMBLE_API_TOKEN:
         return _no_token_result()
 
     logger.warning("[deepfake] starting — video=%r", video_path)
+    sampled_path = None
 
     try:
+        # §3.44 — 6s start + 6s mid segment strategy
+        duration = await asyncio.to_thread(_probe_duration, video_path)
+        sample_meta: dict = {"sampled": False}
+        if duration is not None and duration > 12:
+            sampled_path, sample_meta = await asyncio.to_thread(_sample_video, video_path, duration)
+            submit_path = sampled_path
+        else:
+            submit_path = video_path
+
         async with httpx.AsyncClient(timeout=120) as client:
-            with open(video_path, "rb") as f:
+            with open(submit_path, "rb") as f:
                 resp = await client.post(
                     RESEMBLE_ENDPOINT,
                     headers={
                         "Authorization": f"Bearer {RESEMBLE_API_TOKEN}",
                         "Prefer":        "wait",
                     },
-                    files={"file": (Path(video_path).name, f, "video/mp4")},
+                    files={"file": (Path(submit_path).name, f, "video/mp4")},
                 )
 
         print(f"[deepfake] Resemble HTTP status={resp.status_code}", flush=True)
@@ -52,12 +133,12 @@ async def run_deepfake(video_path: str) -> dict:
 
         if resp.status_code != 200:
             logger.warning("[deepfake] Resemble API returned %d: %r", resp.status_code, resp.text[:200])
-            return _error_result(f"Resemble API error {resp.status_code}")
+            return {**_error_result(f"Resemble API error {resp.status_code}"), **sample_meta}
 
         data = resp.json()
         if not data.get("success"):
             logger.warning("[deepfake] Resemble success=false: %r", resp.text[:300])
-            return _error_result("Resemble returned success=false")
+            return {**_error_result("Resemble returned success=false"), **sample_meta}
 
         item             = data.get("item", {})
         video_metrics    = item.get("video_metrics", {})
@@ -79,7 +160,7 @@ async def run_deepfake(video_path: str) -> dict:
 
         if pillar_score_raw is None:
             logger.warning("[deepfake] no video_metrics.score in Resemble response")
-            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score}
+            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, **sample_meta}
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
@@ -96,6 +177,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "summary":               "Insufficient frame data from Resemble — deepfake analysis excluded.",
                 "high_variance":         False,
                 "video_job_audio_score": video_job_audio_score,
+                **sample_meta,
             }
 
         # Frame scalar replaced by certainty-weighted mean (§3.36 Option B)
@@ -121,6 +203,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "summary":               "No human subject detected in video frames — deepfake analysis not applicable.",
                 "high_variance":         False,
                 "video_job_audio_score": video_job_audio_score,
+                **sample_meta,
             }
         print(f"[deepfake] guard=non_human valid_frames={valid_frame_count} result=pass", flush=True)
 
@@ -194,11 +277,18 @@ async def run_deepfake(video_path: str) -> dict:
             "frame_confidence":      valid_frame_count / max(FRAMES_TO_SAMPLE, 1),
             "high_variance":         high_variance,
             "video_job_audio_score": video_job_audio_score,
+            **sample_meta,
         }
 
     except Exception as e:
         logger.exception("[deepfake] analysis error: %s", e)
         return _error_result(str(e))
+    finally:
+        if sampled_path:
+            try:
+                Path(sampled_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def _error_result(reason: str) -> dict:
