@@ -182,6 +182,7 @@ async def run_deepfake(video_path: str) -> dict:
 
         # Frame scalar replaced by certainty-weighted mean (§3.36 Option B)
         chunks = children[0]["children"]
+        chunk_raw_scores = [float(c["score"]) for c in chunks if c.get("score") is not None]
         frame_data = [
             (float(frame["score"]), float(frame["certainty"]))
             for chunk in chunks
@@ -251,12 +252,13 @@ async def run_deepfake(video_path: str) -> dict:
         ]
 
         if high_variance:
+            _range_str = (
+                f"Frame scores ranged {round(min(chunk_raw_scores) * 100)}%–{round(max(chunk_raw_scores) * 100)}%. "
+                if chunk_raw_scores else "Frame scores varied. "
+            )
             signals.append({
                 "label":      "High score variance across frames",
-                "value":      (
-                    f"Scores ranged {min(frame_scores):.0%} – {max(frame_scores):.0%}. "
-                    "May reflect scene cuts or multiple subjects."
-                ),
+                "value":      _range_str + "May reflect scene cuts or multiple subjects.",
                 "weight":     "medium",
                 "suspicious": False,
             })
