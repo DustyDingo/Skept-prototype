@@ -225,6 +225,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         _effective_au_s = max(_candidates) if _candidates else None
         if _df_s is not None and _df_s < 0.10 and _effective_au_s is not None and _effective_au_s > 0.60:
             job["analysers"]["deepfake"]["excluded_reason"] = "audio_dubbing_pattern"
+            print(f"[fusion] excluded_reason written to job — df={_df_s:.4f} effective_au={_effective_au_s:.4f}", flush=True)
         job["verdict"] = verdict
         job["state"] = "complete"
     except Exception as e:
