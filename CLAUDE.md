@@ -83,12 +83,13 @@ Score uses soft ceiling of 0.65 — metadata alone cannot return a fully manipul
 Returns `video_metrics` with top-level `score`, `certainty`, and `children` (VideoChunkResult nodes, each containing ImageResult children).
 
 **Frame count fields (§3.48):**
-- `resemble_frame_count` — count of ImageResult nodes Resemble returns from its internal analysis of the submitted clip. Typically much larger than `SKEPT_FRAMES` (e.g. 100 nodes for a 12s clip). Logged as `resemble_frame_count=` in every deepfake log line alongside `skept_frames=`.
-- `skept_frames` — number of frames Skept requested via `SKEPT_FRAMES` env var (default 6). The ratio `resemble_frame_count / SKEPT_FRAMES` is not used in any scoring formula.
+- `resemble_frame_count` — count of ImageResult nodes Resemble returns from its internal analysis of the submitted clip. Reflects Resemble's own sub-sampling; typically much larger than `SKEPT_FRAMES` (e.g. 100 ImageResult nodes from a 12s clip vs 6 frames Skept requested). Logged as `resemble_frame_count=` alongside `skept_frames=` in every deepfake log line.
+- `skept_frames` — the `SKEPT_FRAMES` env var value (default 6). Controls Skept's video sampling strategy; not a scoring input.
+- `frame_confidence` in result dict — informational only: `resemble_frame_count / SKEPT_FRAMES`. **Not used in fusion or scoring.** This ratio is a legacy field and is meaningless at runtime (e.g. 100/6 ≈ 16.7); it does not feed the verdict. The actual scoring scalar is `video_metrics.certainty` from the Resemble response (see Step 2 below).
 
 **Scoring model (§3.36, 22 Jun 2026):**
-- Frame score: certainty-weighted mean across all ImageResult nodes — `Σ(frame_score × frame_certainty) / Σ(frame_certainty)`. Uses Resemble's full internal frame set (`resemble_frame_count`), not `SKEPT_FRAMES`.
-- Final pillar score: `frame_weighted_mean × (0.5 + video_metrics.certainty × 0.5)` — top-level certainty value applied as scalar (range 0.5–1.0)
+- Step 1 — Certainty-weighted frame mean: `Σ(frame_score × frame_certainty) / Σ(frame_certainty)` across all ImageResult nodes. Per-frame `ImageResult.certainty` is used as a weight — frames Resemble is more confident about contribute more to the mean. This is implemented as Option B (§3.36).
+- Step 2 — Top-level certainty scalar: `frame_weighted_mean × (0.5 + video_metrics.certainty × 0.5)`. `video_metrics.certainty` is a top-level sub-1.0 float from the Resemble response (e.g. 0.9922) reflecting overall job confidence. Applied as a dampening scalar in range [0.5, 1.0] — never inflates the score above the weighted mean.
 - Fallback: if `Σ(frame_certainty) == 0` or no valid frames, use `video_metrics.score` directly; logs `frame_certainty_fallback=True`
 - Low-coverage guard: `resemble_frame_count < 2` → `status=low_coverage`, `score=None`, excluded from fusion
 
