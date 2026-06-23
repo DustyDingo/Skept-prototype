@@ -24,7 +24,7 @@ encounter viral clips and want a practical, accessible way to assess authenticit
 - **Backend:** FastAPI (Python)
 - **Video ingestion:** yt-dlp
 - **Metadata analysis:** ffprobe
-- **GPU scoring:** Replicate (active — `scamai/deepfake-faceswap-detection`, concurrent frame scoring (asyncio.gather))
+- **GPU scoring:** Resemble AI DETECT-3B Omni (video endpoint for deepfake; audio endpoint for voice clone)
 - **Frontend:** Embedded HTML/CSS/JS string inside `main.py` — do NOT edit `frontend/index.html`
 - **Job store:** In-memory dict (`jobs: dict[str, JobStatus]`) — stateless, no DB
 - **Deployment:** Railway via GitHub push to main
@@ -110,7 +110,8 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 - **Primary path:** Resemble AI voice clone classifier via `RESEMBLE_API_TOKEN`. Raw score converted: `suspicion = (raw + 1.0) / 2.0`. Sub-scores and final pillar score clamped to [0.0, 1.0]. Minimum composite floor: 0.15 (prevents audio zeroing the pillar on definitively-real content).
 - **Fallback path:** librosa heuristics (pitch variance, spectral flatness, ZCR variance) when Resemble unavailable or returns 402.
 - **Consistency scalar (§3.36, 22 Jun 2026):** `item.metrics.consistency` (float, 0–100) parsed from Resemble response and applied as scalar: `audio_final = blended_score × (0.5 + consistency/100 × 0.5)`, clamped to [0.0, 1.0]. Applied after the Resemble + librosa blend. If `consistency` is missing or None, treated as 100.0 (no penalty).
-- Weight: 0.20. Fusion denominator: 0.98 (C2PA excluded).
+- **Video-job audio cross-compare (§3.42, 23 Jun 2026):** After stage 2 completes, `main.py` compares the audio.wav classifier score against `item["metrics"]["aggregated_score"]` from the Resemble video job response. The higher of the two is used as the Resemble classifier input, then the audio pillar blend and consistency scalar are recomputed. `aggregated_score == -1.0` treated as no-audio sentinel (falls through to existing behaviour). Prevents false negatives on audio-dub deepfakes where the audio.wav job reads low but the video-job's embedded audio score reads high. Logs: `[audio] audio_wav_score=X video_job_audio_score=Y selected=Z (higher)`.
+- Weight: 0.35 (§3.33). Fusion denominator max: 0.95 (deepfake + audio).
 
 **Observability (§3.28 resolved):** `audio.py` now logs librosa sub-scores (pitch variance, spectral flatness, ZCR variance) when the fallback path fires. `fusion.py` now logs score, denominator, and per-pillar weighted contributions for every job.
 
@@ -193,8 +194,10 @@ further implementation or data access.
 | YouTube ingestion | Bot detection blocks yt-dlp on some clips | Phase A workaround: `--extractor-args "youtube:player_client=android"`; Phase B: bgutil PO token plugin + residential proxy |
 | Audio/fusion logging | ✅ Resolved — per-job [audio] librosa sub-scores and [fusion] score/denominator/per-pillar breakdown now emitted to Railway logs (18 Jun 2026, §3.28). | — |
 | §3.31 — Subject list missing Trump QID | Trump QID hardcoded in SPARQL query in HEAD but absent from live subject list at runtime. Per-call NER log pending confirmation. | Confirm live subject list contents via Railway log; re-check SPARQL BIND clause. |
-| §3.39 — Frame count display bug (UI) | Evidence card shows "N of M sampled frames scored" in incorrect order. No scoring impact. | Fix display string ordering in frontend. |
-| §3.40 — Asymmetric exclusion transparency gap (UI) | When `audio_dubbing_pattern` fires, deepfake score appears in evidence card but is excluded from fusion. User sees a number that did not affect the verdict with no indication of this. Backend correct. | Add UI indicator (e.g. strikethrough or "excluded" badge) when pillar is asymmetrically excluded. |
+| §3.39 — Frame count display bug (UI) | ✅ Resolved (23 Jun 2026, commit 00d167f) — label now reads "N frames sampled · M scored by Resemble". | — |
+| §3.40 — Asymmetric exclusion transparency gap (UI) | ✅ Resolved (23 Jun 2026, commit 96216af) — evidence card shows "Excluded from verdict" with explanation; dubbing note rendered below meter. | — |
+| §3.42 — Audio-dub false negative | ✅ Resolved (23 Jun 2026, commit 77c68a1) — video-job embedded audio score now cross-compared against audio.wav classifier score; higher is used. See Stage 5 notes. | — |
+| §3.43 — Pillar active count included non-fusion pillars (UI) | ✅ Resolved (23 Jun 2026, commit 8dcf7e7) — `TOTAL_PILLARS` changed from 7 to 2; `activePillars` now counts only deepfake/audio/c2pa with non-null score. Display reads "2/2 pillars active". | — |
 
 ---
 
@@ -250,12 +253,9 @@ further implementation or data access.
 11. **Asymmetric fusion exclusion** (§3.37, 22 Jun 2026) — when `audio_dubbing_pattern` fires
     (audio score > 0.65 and deepfake score < 0.40), the deepfake pillar is excluded from the
     fusion denominator to prevent an authentic-leaning video score from diluting a strong audio
-    manipulation signal. Backend logic is correct; two known UI gaps remain open:
-    - **§3.39** (UI bug): frame count display reads "N of M sampled frames scored" in incorrect
-      order. No scoring impact. Fix pending.
-    - **§3.40** (transparency gap): UI shows the deepfake score in the evidence card but does
-      not indicate it was excluded from fusion. User sees a number that did not contribute to
-      the verdict. Fix pending.
+    manipulation signal. Both UI gaps resolved 23 Jun 2026:
+    - **§3.39** ✅: frame count label corrected to "N frames sampled · M scored by Resemble" (commit 00d167f).
+    - **§3.40** ✅: evidence card shows "Excluded from verdict"; explanation text in expanded state; dubbing note below meter (commit 96216af).
 
 ---
 
@@ -281,8 +281,10 @@ further implementation or data access.
 1. **Logging instrumentation** — ✅ complete — [audio], [fusion], and [subject_identity] per-job log lines all resolved (§3.28 closed 18 Jun 2026, §3.29 closed 18 Jun 2026)
 2. **§3.30 scoring principle** — ✅ complete — all six phases landed 19 Jun 2026 (deploy 6912d75f): metadata authentic-lean clamp, source_rep low_sample clamp, audio librosa-fallback neutralise + 0.15 floor removed, deepfake 0.75 floor removed, fusion denominator exclusion for None scores confirmed
 3. **§3.24 content-type guard** — ✅ complete — all-no-face runs return `status=no_face`, `score=None`, excluded from fusion (deploy 6912d75f); confirmed on @nuggetonbeat dog clip
-4. **§3.32 deepfake calibration gap** — 🔴 OPEN — TikTok-compressed faceswap under-detection; @dextergilmore66 Trump clip returns 28% despite visible body-replacement. Track before Phase 1/TestFlight.
-5. **§3.31 subject identity observability** — 🟡 PARTIAL — startup log confirmed (10 names loaded); per-call log confirmation still pending
+4. **§3.39/§3.40/§3.43 UI fixes** — ✅ complete (23 Jun 2026) — frame count label corrected; asymmetric exclusion surfaced in evidence card and meter; pillar active count restricted to fusion pillars (2/2)
+5. **§3.42 audio-dub false negative** — ✅ complete (23 Jun 2026, commit 77c68a1) — video-job embedded audio score cross-compared against audio.wav score; higher used as Resemble classifier input before audio pillar blend
+6. **§3.32 deepfake calibration gap** — 🔴 OPEN — TikTok-compressed faceswap under-detection; @dextergilmore66 Trump clip returns 28% despite visible body-replacement. Track before Phase 1/TestFlight.
+7. **§3.31 subject identity observability** — 🟡 PARTIAL — startup log confirmed (10 names loaded); per-call log confirmation still pending
 2. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate scouting complete — no Replicate model available; Sightengine API is best current option
 3. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
 4. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
