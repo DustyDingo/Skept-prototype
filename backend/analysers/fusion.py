@@ -104,8 +104,20 @@ def fuse(
         and _vj_audio_s > 0.60
     )
     if asymmetric_exclusion:
+        # Use audio.py's original pillar score (pre-§3.42 video-job override) for the fusion
+        # contribution.  The video_job_audio_score is only the trigger signal; once it fires,
+        # the fusion weight must reflect what audio.py actually scored, not the inflated
+        # video-job-derived value that §3.42 may have written into audio_result["score"].
+        _original = (audio or {}).get("original_score")
+        if _original is not None:
+            scores["audio"] = max(0.0, min(1.0, _original))
+            _audio_s = scores["audio"]
         print(
             f"[fusion] audio_dubbing_pattern — deepfake excluded. score={_audio_s:.4f} denom=0.35",
+            flush=True,
+        )
+        print(
+            f"[fusion] audio pillar score for fusion: {scores['audio']:.4f} (from audio.py); effective_au for trigger: {_vj_audio_s:.4f}",
             flush=True,
         )
 

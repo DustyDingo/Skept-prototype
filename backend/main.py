@@ -213,7 +213,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
                 _raw_cons     = float(_raw_cons) if _raw_cons is not None else 100.0
                 _cons_scalar  = 0.5 + max(0.0, min(1.0, _raw_cons / 100.0)) * 0.5
                 _new_score    = round(max(0.0, min(1.0, _blend * _cons_scalar)), 4)
-                audio_result  = {**audio_result, "score": _new_score, "classifier_score": _vj_audio, "video_job_audio_override": True}
+                audio_result  = {**audio_result, "score": _new_score, "classifier_score": _vj_audio, "video_job_audio_override": True, "original_score": audio_result.get("score")}
                 job["analysers"]["audio"] = audio_result
             else:
                 _selected = "audio_wav"
