@@ -18,6 +18,7 @@ def run_c2pa(video_path: str) -> dict:
 
 
 def apply_resemble_result(c2pa_result: dict, c2pa_resemble_status: str | None) -> dict:
+    print(f"[c2pa] resemble_c2pa_input={c2pa_resemble_status!r} → status={c2pa_result.get('status')}", flush=True)
     if not c2pa_resemble_status:
         return c2pa_result
     result = dict(c2pa_result)

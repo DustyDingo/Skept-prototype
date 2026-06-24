@@ -1,6 +1,7 @@
 """
 subject_list.py — Wikidata-backed list of high-profile subjects.
-Fetched once at app startup; returns empty list on any failure.
+Lazy-loaded on first job; cache persists for the deployment lifetime.
+On fetch failure the cache is not set, so the next job retries.
 """
 
 import logging
@@ -8,6 +9,8 @@ import logging
 import requests
 
 logger = logging.getLogger(__name__)
+
+_subject_list_cache: list[str] | None = None
 
 _SPARQL_URL = "https://query.wikidata.org/sparql"
 _TIMEOUT = 10
@@ -54,10 +57,13 @@ SELECT DISTINCT ?item ?itemLabel WHERE {
 
 def get_subject_list() -> list[str]:
     """
-    Query Wikidata for current heads of state/government and major party
-    leaders across AU, US, UK, and EU institutions.
-    Returns a list of English name strings, or [] on any failure.
+    Returns the cached subject list, fetching from Wikidata on first call.
+    Cache is only populated on success — failures return [] and retry on
+    the next job call.
     """
+    global _subject_list_cache
+    if _subject_list_cache is not None:
+        return _subject_list_cache
     try:
         resp = requests.get(
             _SPARQL_URL,
@@ -73,15 +79,11 @@ def get_subject_list() -> list[str]:
             # Skip bare QIDs returned when no English label exists
             if label and not (label.startswith("Q") and label[1:].isdigit()):
                 names.append(label)
-        logger.info("[subject_list] Fetched %d subjects from Wikidata", len(names))
-        print(f"[subject_list] Fetched {len(names)} subjects from Wikidata", flush=True)
-        logger.info(f"[subject_identity] Wikidata fetch OK — {len(names)} names loaded")
-        print(f"[subject_identity] Wikidata fetch OK — {len(names)} names loaded", flush=True)
-        print(f"[subject_identity] subject_list={names}", flush=True)
-        return names
+        _subject_list_cache = names
+        logger.info("[subject_list] Wikidata fetch OK — %d names loaded (lazy)", len(names))
+        print(f"[subject_list] Wikidata fetch OK — {len(names)} names loaded (lazy)", flush=True)
+        return _subject_list_cache
     except Exception as exc:
-        logger.warning("[subject_list] Wikidata fetch failed — subject identity will be silent: %s", exc)
-        print(f"[subject_list] Wikidata fetch FAILED — subject identity will be silent: {exc}", flush=True)
-        logger.info("[subject_identity] Wikidata fetch FAILED — subject list empty, running silent")
-        print(f"[subject_identity] Wikidata fetch FAILED — subject list empty, running silent", flush=True)
+        logger.warning("[subject_list] Wikidata fetch FAILED (lazy) — subject identity silent for this job: %s", exc)
+        print(f"[subject_list] Wikidata fetch FAILED (lazy) — subject identity silent for this job: {exc}", flush=True)
         return []

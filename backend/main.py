@@ -33,8 +33,6 @@ from analysers.subject_identity import detect_subject
 
 logger = logging.getLogger(__name__)
 
-SUBJECT_LIST: list[str] = []
-
 _cookie_b64 = os.getenv("INSTAGRAM_COOKIES_B64")
 if _cookie_b64:
     try:
@@ -58,8 +56,6 @@ jobs: dict[str, dict] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global SUBJECT_LIST
-    SUBJECT_LIST = await asyncio.to_thread(get_subject_list)
     yield
     for job in jobs.values():
         wd = job.get("workdir")
@@ -134,7 +130,7 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
     try:
         job["state"] = "ingesting"
         video_path, ydl_info = await ingest(url, workdir)
-        job["subject_identity"] = await asyncio.to_thread(detect_subject, ydl_info, SUBJECT_LIST)
+        job["subject_identity"] = await asyncio.to_thread(lambda: detect_subject(ydl_info, get_subject_list()))
         job["state"] = "stage1"
         job["analysers"]["metadata"]          = {"status": "running"}
         job["analysers"]["source_reputation"] = {"status": "running"}
