@@ -98,8 +98,8 @@ def fuse(
     )
     if asymmetric_exclusion:
         print(
-            f"[fusion] asymmetric_exclusion=True deepfake={_deepfake_s:.4f}"
-            f" audio={_audio_s:.4f} reason=audio_dubbing_pattern",
+            f"[fusion] audio_dubbing_pattern active — deepfake excluded from numerator and denominator."
+            f" score={_audio_s:.4f} denom={WEIGHTS['audio']}",
             flush=True,
         )
 
@@ -107,7 +107,7 @@ def fuse(
     weighted_sum = 0.0
     for key, score in scores.items():
         if asymmetric_exclusion and key == "deepfake":
-            continue
+            continue  # excluded from both numerator and denominator — weight 0.60 not counted
         weight        = WEIGHTS[key]
         weighted_sum += score * weight
         total_weight += weight
