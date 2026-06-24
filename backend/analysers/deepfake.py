@@ -157,10 +157,15 @@ async def run_deepfake(video_path: str) -> dict:
         else:
             video_job_audio_score = None
         print(f"[deepfake] video_job_audio_score={video_job_audio_score}", flush=True)
+        video_job_audio_exclusion_reason = (
+            "no_speech_detected" if video_job_audio_score is None and _audio_raw is not None
+            else "no_audio_stream" if video_job_audio_score is None
+            else None
+        )
 
         if pillar_score_raw is None:
             logger.warning("[deepfake] no video_metrics.score in Resemble response")
-            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, **sample_meta}
+            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, "video_job_audio_exclusion_reason": video_job_audio_exclusion_reason, **sample_meta}
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
@@ -175,8 +180,9 @@ async def run_deepfake(video_path: str) -> dict:
                 "frame_confidence":      0.0,
                 "signals":               [],
                 "summary":               "Insufficient frame data from Resemble — deepfake analysis excluded.",
-                "high_variance":         False,
-                "video_job_audio_score": video_job_audio_score,
+                "high_variance":                    False,
+                "video_job_audio_score":             video_job_audio_score,
+                "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
                 **sample_meta,
             }
 
@@ -201,9 +207,10 @@ async def run_deepfake(video_path: str) -> dict:
                 "score":                 None,
                 "frame_confidence":      0.0,
                 "signals":               [],
-                "summary":               "No human subject detected in video frames — deepfake analysis not applicable.",
-                "high_variance":         False,
-                "video_job_audio_score": video_job_audio_score,
+                "summary":                           "No human subject detected in video frames — deepfake analysis not applicable.",
+                "high_variance":                     False,
+                "video_job_audio_score":             video_job_audio_score,
+                "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
                 **sample_meta,
             }
         print(f"[deepfake] guard=non_human resemble_frame_count={resemble_frame_count} skept_frames={FRAMES_TO_SAMPLE} result=pass", flush=True)
@@ -278,8 +285,9 @@ async def run_deepfake(video_path: str) -> dict:
             "summary":               summary,
             "frames_sampled":        resemble_frame_count,
             "frame_confidence":      resemble_frame_count / max(FRAMES_TO_SAMPLE, 1),
-            "high_variance":         high_variance,
-            "video_job_audio_score": video_job_audio_score,
+            "high_variance":                    high_variance,
+            "video_job_audio_score":             video_job_audio_score,
+            "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
             **sample_meta,
         }
 

@@ -16,18 +16,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def analyse(video_job_audio_score: float | None) -> dict:
+def analyse(video_job_audio_score: float | None, audio_exclusion_reason: str | None = None) -> dict:
     if video_job_audio_score is None:
-        print("[audio] video_job_audio_score=None — no speech or no signal — audio pillar excluded (score=None)", flush=True)
+        reason = audio_exclusion_reason or "no_speech_detected"
+        print(f"[audio] video_job_audio_score=None audio_exclusion_reason={reason} — audio pillar excluded (score=None)", flush=True)
         return {
-            "status":          "complete",
-            "score":           None,
-            "low_confidence":  True,
-            "resemble_status": "no_speech_both",
-            "audio_extracted": True,
-            "error":           None,
-            "signals":         [],
-            "summary":         "No speech detected — voice clone analysis not applicable.",
+            "status":                 "complete",
+            "score":                  None,
+            "low_confidence":         True,
+            "resemble_status":        "no_speech_both",
+            "audio_extracted":        True,
+            "audio_exclusion_reason": reason,
+            "error":                  None,
+            "signals":                [],
+            "summary":                "No speech detected — voice clone analysis not applicable.",
         }
 
     score = round(max(0.0, min(1.0, video_job_audio_score)), 4)
