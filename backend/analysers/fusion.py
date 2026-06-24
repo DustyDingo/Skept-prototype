@@ -88,18 +88,24 @@ def fuse(
     # content. Exclude deepfake from the denominator so the audio signal carries
     # the verdict at its normalised weight. The deepfake score is still returned
     # in the job result dict and shown in the evidence card.
-    _deepfake_s = scores.get("deepfake")
-    _audio_s    = scores.get("audio")
+    #
+    # §3.51 — Condition gates on video_job_audio_score (the raw Resemble video-job
+    # embedded audio score, pre-blend), not on audio.py's pillar score. The video-job
+    # audio score is the correct dubbing-pattern signal; the pillar score may be
+    # dampened below 0.60 by the consistency scalar or librosa blend. Fusion score
+    # when exclusion fires still uses audio.py's pillar score (scores["audio"]).
+    _deepfake_s  = scores.get("deepfake")
+    _audio_s     = scores.get("audio")
+    _vj_audio_s  = deepfake.get("video_job_audio_score")
     asymmetric_exclusion = (
         _deepfake_s is not None
         and _deepfake_s < 0.10
-        and _audio_s is not None
-        and _audio_s > 0.60
+        and _vj_audio_s is not None
+        and _vj_audio_s > 0.60
     )
     if asymmetric_exclusion:
         print(
-            f"[fusion] audio_dubbing_pattern active — deepfake excluded from numerator and denominator."
-            f" score={_audio_s:.4f} denom={WEIGHTS['audio']}",
+            f"[fusion] audio_dubbing_pattern — deepfake excluded. score={_audio_s:.4f} denom=0.35",
             flush=True,
         )
 
