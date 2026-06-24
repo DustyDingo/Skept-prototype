@@ -163,9 +163,28 @@ async def run_deepfake(video_path: str) -> dict:
             else None
         )
 
+        # Extract C2PA detection result from Resemble response
+        _c2pa_raw = item.get("c2pa")
+        print(f"[deepfake] resemble_c2pa={_c2pa_raw!r}", flush=True)
+        if _c2pa_raw is None:
+            c2pa_resemble_status = None
+        elif isinstance(_c2pa_raw, dict):
+            _c2pa_status = _c2pa_raw.get("status") or ""
+            _c2pa_found  = _c2pa_raw.get("found") or _c2pa_raw.get("detected") or _c2pa_raw.get("present")
+            if _c2pa_status:
+                c2pa_resemble_status = "not_found" if "not" in _c2pa_status.lower() else "found"
+            else:
+                c2pa_resemble_status = "found" if _c2pa_found else "not_found"
+        elif isinstance(_c2pa_raw, bool):
+            c2pa_resemble_status = "found" if _c2pa_raw else "not_found"
+        elif isinstance(_c2pa_raw, str):
+            c2pa_resemble_status = "not_found" if "not" in _c2pa_raw.lower() else "found"
+        else:
+            c2pa_resemble_status = None
+
         if pillar_score_raw is None:
             logger.warning("[deepfake] no video_metrics.score in Resemble response")
-            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, "video_job_audio_exclusion_reason": video_job_audio_exclusion_reason, **sample_meta}
+            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, "video_job_audio_exclusion_reason": video_job_audio_exclusion_reason, "c2pa_resemble_status": c2pa_resemble_status, **sample_meta}
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
@@ -183,6 +202,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "high_variance":                    False,
                 "video_job_audio_score":             video_job_audio_score,
                 "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
+                "c2pa_resemble_status":              c2pa_resemble_status,
                 **sample_meta,
             }
 
@@ -211,6 +231,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "high_variance":                     False,
                 "video_job_audio_score":             video_job_audio_score,
                 "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
+                "c2pa_resemble_status":              c2pa_resemble_status,
                 **sample_meta,
             }
         print(f"[deepfake] guard=non_human resemble_frame_count={resemble_frame_count} skept_frames={FRAMES_TO_SAMPLE} result=pass", flush=True)
@@ -288,6 +309,7 @@ async def run_deepfake(video_path: str) -> dict:
             "high_variance":                    high_variance,
             "video_job_audio_score":             video_job_audio_score,
             "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
+            "c2pa_resemble_status":              c2pa_resemble_status,
             **sample_meta,
         }
 
