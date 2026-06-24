@@ -1,365 +1,58 @@
 """
 analysers/audio.py — Audio & Voice Clone Detection
 
-Two sub-signals fused within the pillar:
-  1. Resemble AI Detect API v2 (classifier) — requires RESEMBLE_API_TOKEN
-  2. Local librosa heuristics (pitch variance, spectral flatness, ZCR variance)
-     — runs when audio is extractable; degrades gracefully if librosa absent
+Audio pillar score is sourced from the DETECT-3B Omni video-job embedded audio stream (§3.57).
+The standalone audio.wav Resemble API call and librosa heuristics have been removed.
+Score is passed in from deepfake.py's video_job_audio_score field after run_deepfake() completes.
 
-Fusion:
-  - Both available:  0.70 × classifier + 0.30 × heuristics_mean
-  - Classifier only: classifier_score, low_confidence=False
-  - Heuristics only: heuristics_mean,  low_confidence=True
-  - Nothing:         score=None (excluded from fusion denominator)
+video_job_audio_score is already on a [0.0, 1.0] suspicion scale — the (raw + 1) / 2
+conversion is applied in deepfake.py before the value is returned.
 
-BIOMETRIC NOTE: Voice features are non-retained. The extracted audio file is
-deleted in a finally block immediately after scoring. No embeddings or spectral
-representations are stored or logged.
+BIOMETRIC NOTE: No audio extraction or spectral representation is retained.
 """
 
-import asyncio
 import logging
-import os
-import shutil
-import subprocess
-import tempfile
-from pathlib import Path
-
-import httpx
 
 logger = logging.getLogger(__name__)
 
-RESEMBLE_API_TOKEN = os.getenv("RESEMBLE_API_TOKEN")
-RESEMBLE_ENDPOINT = "https://app.resemble.ai/api/v2/detect"
 
-
-async def analyse(video_path: str) -> dict:
-    tmpdir = None
-    try:
-        tmpdir     = tempfile.mkdtemp(prefix="skept_audio_")
-        audio_path = str(Path(tmpdir) / "audio.wav")
-
-        subprocess.run(
-            [
-                "ffmpeg", "-i", video_path,
-                "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-                audio_path, "-y", "-loglevel", "error",
-            ],
-            capture_output=True,
-            timeout=60,
-        )
-
-        audio_extracted = (
-            Path(audio_path).exists() and Path(audio_path).stat().st_size > 0
-        )
-
-        if not audio_extracted:
-            return _base_result(
-                audio_extracted=False,
-                error="No audio track found in video",
-                signals=[{"label": "Audio track", "value": "Not found", "suspicious": True}],
-                summary="No audio track found — voice clone analysis unavailable.",
-            )
-
-        # Run classifier and heuristics concurrently
-        classifier_task = asyncio.create_task(_resemble_detect(audio_path))
-
-        try:
-            pitch_score, flatness_score, zcr_score, heuristics_available = (
-                await asyncio.to_thread(_librosa_heuristics, audio_path)
-            )
-        except Exception as exc:
-            logger.warning("[audio] heuristics error: %s", exc)
-            pitch_score = flatness_score = zcr_score = None
-            heuristics_available = False
-
-        classifier_score, classifier_label, classifier_segments, resemble_raw_score, consistency = await classifier_task
-
-        # Compute mean of whichever heuristic scores are not None
-        valid_h = [s for s in (pitch_score, flatness_score, zcr_score) if s is not None]
-        heuristics_mean = round(sum(valid_h) / len(valid_h), 3) if valid_h else None
-
-        # Pillar fusion
-        # -1.0 from Resemble means "no analysable speech" — not a detection error.
-        # Skip librosa in this case; librosa only fires on genuine Resemble errors.
-        resemble_no_speech = (resemble_raw_score is not None and float(resemble_raw_score) == -1.0)
-
-        if resemble_no_speech:
-            score          = None
-            low_confidence = True
-            _path          = "no_speech_wav"
-            print("[audio] Resemble audio.wav sentinel (-1.0) — no speech detected — score=None", flush=True)
-        elif classifier_score is not None and heuristics_mean is not None:
-            score          = round(classifier_score * 0.70 + heuristics_mean * 0.30, 3)
-            low_confidence = False
-            _path          = "resemble_primary+librosa"
-        elif classifier_score is not None:
-            score          = classifier_score
-            low_confidence = False
-            _path          = "resemble_primary"
-        elif heuristics_mean is not None:
-            score          = 0.5
-            low_confidence = True
-            _path          = "librosa_fallback"
-        else:
-            score          = None
-            low_confidence = True
-            _path          = "no_signal"
-        print(f"[audio] path={_path} classifier_score={classifier_score} heuristics_mean={heuristics_mean}", flush=True)
-
-        if score is not None:
-            raw_consistency        = float(consistency) if consistency is not None else 100.0
-            consistency_normalised = max(0.0, min(1.0, raw_consistency / 100.0))
-            consistency_scalar     = 0.5 + consistency_normalised * 0.5
-            audio_final            = max(0.0, min(1.0, score * consistency_scalar))
-            print(f"[audio] consistency={raw_consistency:.2f} consistency_scalar={consistency_scalar:.4f} final_score={audio_final:.4f}", flush=True)
-            score = round(audio_final, 4)
-
-        resemble_used = classifier_score is not None
-        _score_str = f"{score:.3f}" if score is not None else "None"
-        logger.info(f"[audio] path={'resemble' if resemble_used else 'librosa'} score={_score_str}")
-
-        signals = _build_signals(
-            classifier_score, classifier_label,
-            pitch_score, flatness_score, zcr_score,
-            heuristics_available,
-        )
-        summary = _build_summary(score, low_confidence)
-
-        if not RESEMBLE_API_TOKEN:
-            _rs = "n/a"
-        elif resemble_no_speech:
-            _rs = "no_speech"
-        elif classifier_score is not None:
-            _rs = "ok"
-        else:
-            _rs = "error"
-        _raw_str = str(resemble_raw_score) if resemble_raw_score is not None else "n/a"
-        print(f"[audio] path={_path} resemble_status={_rs} resemble_raw={_raw_str} pitch_var={pitch_score} spec_flat={flatness_score} zcr_var={zcr_score} final_score={score}", flush=True)
-
-        # §3.52 — log the value being handed to fusion before return.
-        # NOTE: main.py §3.42 video-job cross-compare may recompute and overwrite
-        # this score in the result dict after this return, before fusion.py reads it.
-        # If the fusion log shows a different value than this line, the discrepancy
-        # originates in main.py's post-return §3.42 recomputation, not audio.py.
-        _score_log = f"{score:.4f}" if score is not None else "None"
-        print(f"[audio] returning to fusion — pillar_score={_score_log} path={_path}", flush=True)
-
+def analyse(video_job_audio_score: float | None) -> dict:
+    if video_job_audio_score is None:
+        print("[audio] video_job_audio_score=None — no speech or no signal — audio pillar excluded (score=None)", flush=True)
         return {
-            "status":                  "complete",
-            "score":                   score,
-            "low_confidence":          low_confidence,
-            "classifier_score":        classifier_score,
-            "classifier_label":        classifier_label,
-            "classifier_segments":     classifier_segments,
-            "pitch_variance_score":    pitch_score,
-            "spectral_flatness_score": flatness_score,
-            "zcr_variance_score":      zcr_score,
-            "heuristics_available":    heuristics_available,
-            "resemble_consistency":    consistency,
-            "resemble_status":         _rs,
-            "audio_extracted":         True,
-            "error":                   None,
-            "signals":                 signals,
-            "summary":                 summary,
+            "status":          "complete",
+            "score":           None,
+            "low_confidence":  True,
+            "resemble_status": "no_speech_both",
+            "audio_extracted": True,
+            "error":           None,
+            "signals":         [],
+            "summary":         "No speech detected — voice clone analysis not applicable.",
         }
 
-    except Exception as e:
-        logger.exception("[audio] analysis error: %s", e)
-        return _base_result(
-            audio_extracted=False,
-            error=str(e),
-            signals=[],
-            summary=f"Audio analysis failed: {e}",
-            status="error",
-        )
-    finally:
-        if tmpdir and Path(tmpdir).exists():
-            shutil.rmtree(tmpdir, ignore_errors=True)
+    score = round(max(0.0, min(1.0, video_job_audio_score)), 4)
+    print(f"[audio] pillar_score={score:.4f} source=video_job_omni", flush=True)
 
-
-async def _resemble_detect(
-    audio_path: str,
-) -> tuple[float | None, str | None, list | None, float | None, float | None]:
-    if not RESEMBLE_API_TOKEN:
-        return None, None, None, None, None
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            with open(audio_path, "rb") as f:
-                resp = await client.post(
-                    RESEMBLE_ENDPOINT,
-                    headers={
-                        "Authorization": f"Bearer {RESEMBLE_API_TOKEN}",
-                        "Prefer":        "wait",
-                    },
-                    files={"file": ("audio.wav", f, "audio/wav")},
-                )
-
-        print(f"[audio] Resemble HTTP status={resp.status_code}", flush=True)
-        print(f"[audio] Resemble raw body={resp.text[:500]}", flush=True)
-        if resp.status_code != 200:
-            logger.warning(
-                "[audio] Resemble API returned %d: %r", resp.status_code, resp.text[:200]
-            )
-            return None, None, None, None, None
-
-        data = resp.json()
-        logger.info("[audio] Resemble raw response: %s", data)
-        try:
-            if not data.get("success"):
-                logger.warning("[audio] Resemble success=false: %r", resp.text[:300])
-                return None, None, None, None, None
-
-            metrics   = data["item"]["metrics"]
-            raw_score = metrics.get("aggregated_score")
-            if raw_score is None:
-                logger.warning("[audio] Resemble returned no aggregated_score — routing to librosa fallback")
-                return None, None, None, None, None
-            if float(raw_score) == -1.0:
-                logger.warning("[audio] Resemble returned no-signal score (aggregated_score=%r) — routing to librosa fallback", raw_score)
-                return None, None, None, float(raw_score), None
-            resemble_suspicion  = (float(raw_score) + 1.0) / 2.0
-            classifier_score    = round(max(0.0, min(1.0, resemble_suspicion)), 4)
-            classifier_label    = metrics.get("label")
-            classifier_segments  = [float(s) for s in metrics.get("score", []) if s is not None]
-            _raw_consistency     = metrics.get("consistency")
-            consistency          = float(_raw_consistency) if _raw_consistency is not None else None
-            return classifier_score, classifier_label, classifier_segments, float(raw_score), consistency
-        except Exception as e:
-            logger.warning("[audio] Resemble classifier unavailable: %s — heuristics only", e)
-            return None, None, None, None, None
-
-    except Exception as e:
-        logger.warning("[audio] Resemble API error: %s", e)
-        return None, None, None, None, None
-
-
-def _librosa_heuristics(
-    audio_path: str,
-) -> tuple[float | None, float | None, float | None, bool]:
-    try:
-        import numpy as np
-        import librosa
-    except ImportError:
-        return None, None, None, False
-
-    y, sr = librosa.load(audio_path, sr=16000, mono=True, duration=30.0)
-
-    # Pitch variance: low std dev → monotone → suspicious → higher score
-    f0        = librosa.yin(y, fmin=50, fmax=500, sr=sr)
-    f0_voiced = f0[f0 > 0]
-    if len(f0_voiced) >= 10:
-        variance      = float(np.std(f0_voiced))
-        pitch_score   = round(max(0.0, min(1.0, 1.0 - (variance / 40.0))), 3)
-    else:
-        pitch_score   = 0.50  # insufficient voiced frames
-
-    # Spectral flatness: high mean → noise-like → suspicious → higher score
-    flatness        = librosa.feature.spectral_flatness(y=y)
-    mean_flatness   = float(np.mean(flatness))
-    flatness_score  = round(max(0.0, min(1.0, mean_flatness * 20.0)), 3)
-
-    # ZCR variance: low variance → unnaturally consistent → suspicious → higher score
-    zcr          = librosa.feature.zero_crossing_rate(y)
-    zcr_variance = float(np.var(zcr))
-    zcr_score    = round(max(0.0, min(1.0, 1.0 - (zcr_variance / 0.01))), 3)
-
-    logger.warning(
-        "[audio] librosa sub-scores: pitch_variance=%.4f spectral_flatness=%.4f zcr_variance=%.4f",
-        pitch_score,
-        flatness_score,
-        zcr_score,
-    )
-    return pitch_score, flatness_score, zcr_score, True
-
-
-def _build_signals(
-    classifier_score, classifier_label,
-    pitch_score, flatness_score, zcr_score,
-    heuristics_available,
-):
-    signals = []
-
-    # Classifier row
-    if RESEMBLE_API_TOKEN:
-        if classifier_score is not None:
-            label_suffix = f" ({classifier_label})" if classifier_label else ""
-            signals.append({
-                "label":     "Voice clone classifier",
-                "value":     f"{round(classifier_score * 100):.0f}%{label_suffix}",
-                "suspicious": classifier_score > 0.5,
-            })
-        else:
-            signals.append({
-                "label":     "Voice clone classifier",
-                "value":     "API error",
-                "suspicious": False,
-            })
-    else:
-        signals.append({
-            "label":     "Voice clone classifier",
-            "value":     "API key not set — heuristics only",
-            "suspicious": False,
-        })
-
-    # Heuristic rows
-    if heuristics_available:
-        for label, score in (
-            ("Pitch variance",    pitch_score),
-            ("Spectral flatness", flatness_score),
-            ("ZCR variance",      zcr_score),
-        ):
-            value = f"{round(score * 100):.0f}% suspicion" if score is not None else "N/A"
-            signals.append({
-                "label":     label,
-                "value":     value,
-                "suspicious": score is not None and score > 0.6,
-            })
-    else:
-        signals.append({
-            "label":     "Prosody heuristics",
-            "value":     "Unavailable (librosa not installed)",
-            "suspicious": False,
-        })
-
-    return signals
-
-
-def _build_summary(score: float | None, low_confidence: bool) -> str:
-    if score is None:
-        return "Audio analysis produced no usable signal."
     if score < 0.3:
-        s = f"Audio signals suggest authentic speech (suspicion score: {score:.0%})."
+        summary = f"Audio analysis found no voice-clone indicators ({score:.0%} suspicion score)."
     elif score < 0.6:
-        s = f"Audio signals inconclusive (suspicion score: {score:.0%})."
+        summary = f"Audio signals inconclusive ({score:.0%} suspicion score)."
     else:
-        s = f"Audio signals indicate possible voice synthesis (suspicion score: {score:.0%})."
-    if low_confidence:
-        s += " Heuristics only — Resemble AI classifier not active."
-    return s
+        summary = f"Audio signals indicate possible voice synthesis ({score:.0%} suspicion score)."
 
-
-def _base_result(
-    *,
-    audio_extracted: bool,
-    error: str | None,
-    signals: list,
-    summary: str,
-    status: str = "complete",
-) -> dict:
     return {
-        "status":                  status,
-        "score":                   None,
-        "low_confidence":          True,
-        "classifier_score":        None,
-        "classifier_label":        None,
-        "classifier_segments":     None,
-        "pitch_variance_score":    None,
-        "spectral_flatness_score": None,
-        "zcr_variance_score":      None,
-        "heuristics_available":    False,
-        "audio_extracted":         audio_extracted,
-        "error":                   error,
-        "signals":                 signals,
-        "summary":                 summary,
+        "status":          "complete",
+        "score":           score,
+        "low_confidence":  False,
+        "resemble_status": "ok",
+        "audio_extracted": True,
+        "error":           None,
+        "signals": [
+            {
+                "label":      "Voice clone score (Omni embedded audio)",
+                "value":      f"{round(score * 100):.0f}%",
+                "suspicious": score > 0.5,
+            }
+        ],
+        "summary": summary,
     }

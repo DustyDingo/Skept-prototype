@@ -140,7 +140,6 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         job["analysers"]["source_reputation"] = {"status": "running"}
         job["analysers"]["source_behaviour"]  = {"status": "running"}
         job["analysers"]["c2pa"]              = {"status": "running"}
-        job["analysers"]["audio"]             = {"status": "running"}
 
         _skipped_rep = {
             "analyser": "source_reputation", "status": "skipped",
@@ -154,20 +153,18 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
         }
 
         if url:
-            meta_result, rep_result, beh_result, c2pa_result, audio_result = await asyncio.gather(
+            meta_result, rep_result, beh_result, c2pa_result = await asyncio.gather(
                 asyncio.to_thread(run_metadata, video_path, url),
                 asyncio.to_thread(run_reputation, url, ydl_info),
                 run_source_behaviour(url, ydl_info),
                 asyncio.to_thread(run_c2pa, video_path),
-                analyse_audio(video_path),
             )
             if not c2pa_result.get("status") or c2pa_result.get("score") is None:
                 c2pa_result["status"] = "skipped"
         else:
-            meta_result, c2pa_result, audio_result = await asyncio.gather(
+            meta_result, c2pa_result = await asyncio.gather(
                 asyncio.to_thread(run_metadata, video_path, ""),
                 asyncio.to_thread(run_c2pa, video_path),
-                analyse_audio(video_path),
             )
             rep_result = _skipped_rep
             beh_result = _skipped_beh
@@ -179,49 +176,14 @@ async def run_pipeline(job_id: str, url: str | None, workdir: str):
             c2pa_result["status"] = "skipped"
         job["analysers"]["c2pa"]              = c2pa_result
         logger.warning("[pipeline] c2pa written to job: %r", c2pa_result)
-        job["analysers"]["audio"]             = audio_result
 
         job["state"] = "stage2"
         job["analysers"]["deepfake"] = {"status": "running"}
+        job["analysers"]["audio"]    = {"status": "running"}
         deepfake_result = await run_deepfake(video_path)
+        audio_result    = analyse_audio(deepfake_result.get("video_job_audio_score"))
         job["analysers"]["deepfake"] = deepfake_result
-
-        # §3.42 — Cross-compare audio.wav classifier score vs video-job embedded audio score.
-        # On audio-dub deepfakes (real video + cloned audio) the audio.wav job can read low
-        # while the video job's audio score reads high.  Use whichever is higher as the
-        # Resemble classifier input, then recompute the audio pillar blend + consistency scalar.
-        _vj_audio = deepfake_result.get("video_job_audio_score")
-        _wav_cls  = audio_result.get("classifier_score")
-        _audio_wav_no_speech = audio_result.get("resemble_status") == "no_speech"
-        if _audio_wav_no_speech and _vj_audio is None:
-            # Both Resemble sources returned no-speech sentinel — exclude audio pillar entirely
-            print("[audio] both resemble scores sentinel (-1.0) — no speech detected — audio pillar excluded (score=None)", flush=True)
-            audio_result = {**audio_result, "resemble_status": "no_speech_both"}
-            job["analysers"]["audio"] = audio_result
-        elif _vj_audio is not None:
-            if _wav_cls is None or _vj_audio > _wav_cls:
-                _selected = "video_job"
-                _hscores  = [
-                    audio_result.get("pitch_variance_score"),
-                    audio_result.get("spectral_flatness_score"),
-                    audio_result.get("zcr_variance_score"),
-                ]
-                _valid_h = [s for s in _hscores if s is not None]
-                _hmean   = round(sum(_valid_h) / len(_valid_h), 3) if _valid_h else None
-                _blend   = round(_vj_audio * 0.70 + _hmean * 0.30, 3) if _hmean is not None else _vj_audio
-                _raw_cons     = audio_result.get("resemble_consistency")
-                _raw_cons     = float(_raw_cons) if _raw_cons is not None else 100.0
-                _cons_scalar  = 0.5 + max(0.0, min(1.0, _raw_cons / 100.0)) * 0.5
-                _new_score    = round(max(0.0, min(1.0, _blend * _cons_scalar)), 4)
-                audio_result  = {**audio_result, "score": _new_score, "classifier_score": _vj_audio, "video_job_audio_override": True, "original_score": audio_result.get("score")}
-                job["analysers"]["audio"] = audio_result
-            else:
-                _selected = "audio_wav"
-            print(
-                f"[audio] audio_wav_score={_wav_cls} video_job_audio_score={_vj_audio} "
-                f"selected={_selected} (higher)",
-                flush=True,
-            )
+        job["analysers"]["audio"]    = audio_result
 
         verdict = fuse(meta_result, rep_result, beh_result, c2pa_result, deepfake_result, audio_result)
         _df_s    = deepfake_result.get("score")
