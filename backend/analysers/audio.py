@@ -137,6 +137,14 @@ async def analyse(video_path: str) -> dict:
         _raw_str = str(resemble_raw_score) if resemble_raw_score is not None else "n/a"
         print(f"[audio] path={_path} resemble_status={_rs} resemble_raw={_raw_str} pitch_var={pitch_score} spec_flat={flatness_score} zcr_var={zcr_score} final_score={score}", flush=True)
 
+        # §3.52 — log the value being handed to fusion before return.
+        # NOTE: main.py §3.42 video-job cross-compare may recompute and overwrite
+        # this score in the result dict after this return, before fusion.py reads it.
+        # If the fusion log shows a different value than this line, the discrepancy
+        # originates in main.py's post-return §3.42 recomputation, not audio.py.
+        _score_log = f"{score:.4f}" if score is not None else "None"
+        print(f"[audio] returning to fusion — pillar_score={_score_log} path={_path}", flush=True)
+
         return {
             "status":                  "complete",
             "score":                   score,
