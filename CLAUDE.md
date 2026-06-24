@@ -67,6 +67,8 @@ App served at `http://localhost:8000`. No separate frontend build step.
 User submits URL → backend creates `job_id` → frontend polls `/api/status/{job_id}` every 2–3s
 → pipeline runs stages in sequence:
 
+**Input validation (§3.66, 25 Jun 2026):** `urllib.parse.urlparse()` checks scheme (http/https) and netloc before dispatching to yt-dlp. Invalid input returns HTTP 400.
+
 ### Stage 1 — Metadata (CPU, fast)
 `analysers/metadata.py` — uses ffprobe to extract forensic signals:
 - Camera/encoder metadata (capped at 0.5 for platform-reencoded sources)
@@ -130,7 +132,7 @@ Returns exactly 0.50 when no actionable signal found — contributes no directio
 - **Score contribution:** Flag only — not a fusion input, not in denominator.
 - **Evidence card:** Standalone silent row — renders amber/caution when `matched=True`, hidden when `matched=False`.
 
-**Observability (§3.29 resolved):** `subject_list.py` now prints Wikidata fetch OK/FAILED with name count at startup. `subject_identity.py` now prints list_size, ner_entities, matched, and name at every return point (18 Jun 2026).
+**Observability (§3.29/§3.31 resolved):** `subject_list.py` now prints Wikidata fetch OK/FAILED with name count at startup. `subject_identity.py` emits two log lines per call: `[subject_identity] hashtag_tokens=[...] segmented='...'` (fires when hashtags present, before NER); `[subject_identity] list_size=... ner_entities=... matched=...` (fires at every return point). Both are permanent production log lines (25 Jun 2026).
 
 ### Fusion Layer
 `analysers/fusion.py` — fixed weighted ensemble (§3.33, 22 Jun 2026):
@@ -199,7 +201,7 @@ further implementation or data access.
 |---|---|---|
 | YouTube ingestion | Bot detection blocks yt-dlp on some clips | Phase A workaround: `--extractor-args "youtube:player_client=android"`; Phase B: bgutil PO token plugin + residential proxy |
 | Audio/fusion logging | ✅ Resolved — per-job [audio] librosa sub-scores and [fusion] score/denominator/per-pillar breakdown now emitted to Railway logs (18 Jun 2026, §3.28). | — |
-| §3.31 — Subject list missing Trump QID | Trump QID hardcoded in SPARQL query in HEAD but absent from live subject list at runtime. Per-call NER log pending confirmation. | Confirm live subject list contents via Railway log; re-check SPARQL BIND clause. |
+| §3.31 — Subject identity wordninja + observability | ✅ Resolved (25 Jun 2026) — wordninja hashtag pre-processing live in `detect_subject()`; per-call NER log confirmed. | — |
 | §3.39 — Frame count display bug (UI) | ✅ Resolved (23 Jun 2026, commit 00d167f) — label now reads "N frames sampled · M scored by Resemble". | — |
 | §3.40 — Asymmetric exclusion transparency gap (UI) | ✅ Resolved (23 Jun 2026, commit 96216af) — evidence card shows "Excluded from verdict" with explanation; dubbing note rendered below meter. | — |
 | §3.42 — Audio-dub false negative | ✅ Superseded (§3.57, 24 Jun 2026) — audio pillar now sourced directly from video-job Omni embedded audio score; audio.wav call and §3.42 cross-compare logic removed from main.py. | — |
@@ -291,7 +293,7 @@ further implementation or data access.
 4. **§3.39/§3.40/§3.43 UI fixes** — ✅ complete (23 Jun 2026) — frame count label corrected; asymmetric exclusion surfaced in evidence card and meter; pillar active count restricted to fusion pillars (2/2)
 5. **§3.57 audio pillar simplification** — ✅ complete (24 Jun 2026) — audio pillar now sourced directly from video-job Omni embedded audio score; standalone audio.wav call, librosa heuristics, consistency scalar, and §3.42/§3.45 cross-compare logic removed
 6. **§3.32 deepfake calibration gap** — 🔴 OPEN — TikTok-compressed faceswap under-detection; @dextergilmore66 Trump clip returns 28% despite visible body-replacement. Track before Phase 1/TestFlight.
-7. **§3.31 subject identity observability** — 🟡 PARTIAL — startup log confirmed (10 names loaded); per-call log confirmation still pending
+7. **§3.31 subject identity observability** — ✅ complete (25 Jun 2026) — wordninja hashtag pre-processing live in `detect_subject()`; per-call NER log confirmed
 2. **Synthetic generation detector** — new independent pillar for Kling/Sora/Runway-generated content (§3.20); Replicate scouting complete — no Replicate model available; Sightengine API is best current option
 3. **curl-cffi / TikTok reliability** — ✅ done; curl-cffi added to requirements.txt for TLS fingerprint impersonation
 4. **Reverse video search** — detect re-uploads and source misattribution via reverse image/video lookup
