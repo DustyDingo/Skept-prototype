@@ -1,0 +1,30 @@
+name = "skept-verify"
+main = "cloudflare/verify-worker.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "SKEPT_AUTH_DB"
+database_name = "skept-auth"
+database_id = "b81343be-4703-4d26-959e-46781843d563"
+
+[[d1_databases]]
+binding = "SKEPT_ANALYSIS_DB"
+database_name = "skept-analysis"
+database_id = "f1c17fe3-fd52-48cb-a22c-f4658918e301"
+
+[[kv_namespaces]]
+binding = "AUTH_SESSIONS"
+id = "acb86bfb713e453ab616053bdbc785f8"
+preview_id = "4367d8434b94480f9e38e6989d1c01ff"
+
+[vars]
+INGEST_WORKER_URL = "https://skept-ingest.up.railway.app"
+
+# [[routes]] — uncomment when wiring skept.co/api/verify
+# pattern = "skept.co/api/verify"
+# zone_name = "skept.co"
+
+# Secrets — set via `wrangler secret put --config cloudflare/wrangler-verify.toml`, do NOT commit:
+#   wrangler secret put RESEMBLE_API_KEY --config cloudflare/wrangler-verify.toml
+#   wrangler secret put INGEST_SECRET    --config cloudflare/wrangler-verify.toml
+#   wrangler secret put R2_BUCKET_URL    --config cloudflare/wrangler-verify.toml
