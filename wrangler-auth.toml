@@ -12,8 +12,8 @@ compatibility_date = "2026-06-25"
 # Paste both returned ids below.
 [[kv_namespaces]]
 binding    = "AUTH_SESSIONS"
-id         = "REPLACE_WITH_KV_ID"
-preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
+id         = "acb86bfb713e453ab616053bdbc785f8"
+preview_id = "4367d8434b94480f9e38e6989d1c01ff"
 
 # ── D1 database binding ────────────────────────────────────────────────────
 # skept-auth database: users, auth_tokens, tombstones.
@@ -26,7 +26,7 @@ preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
 [[d1_databases]]
 binding       = "SKEPT_AUTH_DB"
 database_name = "skept-auth"
-database_id   = "REPLACE_WITH_D1_ID"
+database_id   = "b81343be-4703-4d26-959e-46781843d563"
 
 # ── Production route ───────────────────────────────────────────────────────
 # Uncomment after skept.co zone is confirmed active on Cloudflare.
