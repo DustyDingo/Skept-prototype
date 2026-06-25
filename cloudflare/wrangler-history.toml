@@ -1,0 +1,17 @@
+name = "skept-history"
+main = "cloudflare/history-worker.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "SKEPT_ANALYSIS_DB"
+database_name = "skept-analysis"
+database_id = "f1c17fe3-fd52-48cb-a22c-f4658918e301"
+
+[[kv_namespaces]]
+binding = "AUTH_SESSIONS"
+id = "acb86bfb713e453ab616053bdbc785f8"
+preview_id = "4367d8434b94480f9e38e6989d1c01ff"
+
+# [[routes]] — uncomment when wiring skept.co/api/history
+# pattern = "skept.co/api/history"
+# zone_name = "skept.co"
