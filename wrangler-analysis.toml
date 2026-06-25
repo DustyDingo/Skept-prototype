@@ -1,0 +1,20 @@
+name = "skept-analysis"
+main = "analysis-worker.js"
+compatibility_date = "2026-06-25"
+
+[[d1_databases]]
+binding = "SKEPT_AUTH_DB"
+database_name = "skept-auth"
+database_id = "b81343be-4703-4d26-959e-46781843d563"
+
+[[d1_databases]]
+binding = "SKEPT_ANALYSIS_DB"
+database_name = "skept-analysis"
+database_id = "f1c17fe3-fd52-48cb-a22c-f4658918e301"
+
+# Secrets (set via wrangler secret put — never commit):
+#   RESEMBLE_API_KEY
+#   JWT_SECRET  (shared with skept-auth worker for JWT verification)
+
+[observability]
+enabled = true
