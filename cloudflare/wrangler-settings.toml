@@ -1,5 +1,5 @@
 name = "skept-settings"
-main = "cloudflare/settings-worker.js"
+main = "settings-worker.js"
 compatibility_date = "2025-01-01"
 
 [[d1_databases]]
