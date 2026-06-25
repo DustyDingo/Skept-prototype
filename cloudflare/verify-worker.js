@@ -1,7 +1,15 @@
 import { fuse } from './fusion.js';
+import { getTier } from './tier-config.js';
 
-const TIER_CAPS = { free: 5, plus: 20, pro: 50, max: 100 };
 const WINDOW_SECONDS = 2_592_000; // 30 days
+
+// Maps tier depthSegment names to Worker segment objects.
+// 'mid' and 'tail' are sentinel strings; Worker resolves actual timestamps using clip duration.
+const SEGMENT_DEFS = {
+  head: { start: 0,      duration: 6 },
+  mid:  { start: 'mid',  duration: 6 },
+  tail: { start: 'tail', duration: 6 },
+};
 
 function derivePlatform(url) {
   try {
@@ -24,20 +32,6 @@ function rawToSuspicion(raw) {
   return clamp((raw + 1.0) / 2.0, 0.0, 1.0);
 }
 
-function depthConfig(tier) {
-  const segments6 = [{ start: 0, duration: 6 }];
-  const segmentsMid = { start: 'mid', duration: 6 };
-  const segmentsTail = { start: 'tail', duration: 6 };
-
-  if (tier === 'free') {
-    return { segments: segments6, priority_queue: false };
-  }
-  if (tier === 'plus' || tier === 'pro') {
-    return { segments: [...segments6, segmentsMid], priority_queue: false };
-  }
-  // max
-  return { segments: [...segments6, segmentsMid, segmentsTail], priority_queue: true };
-}
 
 async function authenticate(request, AUTH_SESSIONS) {
   const authHeader = request.headers.get('Authorization') || '';
@@ -63,7 +57,7 @@ async function authenticate(request, AUTH_SESSIONS) {
 
 async function checkQuota(db, userId, tier) {
   const now = Math.floor(Date.now() / 1000);
-  const cap = TIER_CAPS[tier] ?? TIER_CAPS.free;
+  const cap = getTier(tier).quota;
 
   const row = await db.prepare(
     'SELECT run_count, window_start FROM quota_usage WHERE user_id = ?'
@@ -177,7 +171,9 @@ export default {
       }
 
       // Step 3 — Depth config
-      const { segments, priority_queue: priorityQueue } = depthConfig(tier);
+      const tierConfig = getTier(tier);
+      const segments = tierConfig.depthSegments.map(s => SEGMENT_DEFS[s]);
+      const priorityQueue = tierConfig.priority;
 
       // Step 4 — Ingestion
       const jobId = crypto.randomUUID();
