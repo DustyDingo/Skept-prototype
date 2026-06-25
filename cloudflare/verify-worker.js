@@ -230,11 +230,23 @@ export default {
       const purgeAfter = createdAt + 15_552_000;
       const platform = derivePlatform(clipUrl);
 
+      function mapVerdict(fusionVerdict) {
+        const map = {
+          likely_authentic:   'authentic',
+          inconclusive:       'ambiguous',
+          likely_manipulated: 'manipulated',
+          insufficient_data:  'ambiguous',
+        };
+        return map[fusionVerdict] ?? 'ambiguous';
+      }
+
+      const run_depth = segments.length === 1 ? '6s' : segments.length === 2 ? '12s' : '18s';
+
       await env.SKEPT_ANALYSIS_DB.prepare(`
         INSERT INTO analysis_history (
-          id, user_id, clip_url, r2_key, platform, verdict, score,
-          pillar_detail, exclusion_reasons, tier_at_run, priority_queue,
-          model_version, run_segments, created_at, purge_after
+          id, user_id, clip_url, r2_key, platform, verdict_state, score,
+          evidence_json, conflict_flags, tier_at_creation, priority_queue,
+          model_version, run_depth, created_at, purge_after
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         analysisId,
@@ -242,14 +254,14 @@ export default {
         clipUrl,
         r2Key,
         platform,
-        verdict,
+        mapVerdict(verdict),
         score,
         JSON.stringify(pillar_detail),
         JSON.stringify(exclusion_reasons),
         tier,
         priorityQueue ? 1 : 0,
         'resemble-detect-3b-omni',
-        JSON.stringify(segments),
+        run_depth,
         createdAt,
         purgeAfter
       ).run();

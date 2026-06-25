@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS analysis_history (
                                  CHECK (depth IN ('6s', '12s', '18s')),
   trimmed              INTEGER NOT NULL DEFAULT 0,      -- 1 = clip was trimmed before Resemble submission
   original_duration_s  INTEGER,                         -- original clip duration in seconds
-  created_at           INTEGER NOT NULL                 -- Unix epoch seconds
+  created_at           INTEGER NOT NULL,                -- Unix epoch seconds
+  r2_key               TEXT,                            -- R2 object key for the full clip file
+  priority_queue       INTEGER NOT NULL DEFAULT 0       -- boolean: 1 = Max-tier priority queue job
 );
 
 CREATE INDEX IF NOT EXISTS idx_analysis_history_user_id    ON analysis_history (user_id);
