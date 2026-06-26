@@ -92,8 +92,8 @@ async def analyse(
     if url:
         _parsed = urlparse(url)
         if _parsed.scheme not in ("http", "https") or not _parsed.netloc:
-            logger.warning("[analyse] invalid URL submitted: %.80s", url)
-            return JSONResponse(status_code=400, content={"error": "Please enter a valid video URL"})
+            logger.warning(f"[analyse] URL pre-flight rejected: scheme={_parsed.scheme!r} netloc={_parsed.netloc!r}")
+            return JSONResponse({"error": "Invalid URL"}, status_code=400)
     job_id = str(uuid.uuid4())
     workdir = tempfile.mkdtemp(prefix="skept_")
     jobs[job_id] = {
