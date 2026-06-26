@@ -295,7 +295,10 @@ async def run_deepfake(video_path: str) -> dict:
                 "suspicious": False,
             })
 
-        if weighted_score < 0.3:
+        if pillar_score_raw > 0.50 and deepfake_final < 0.15:
+            # Resemble's own label is suspicious but certainty scalar collapsed the pillar score — §3.73
+            summary = f"Frame-level analysis flagged suspicious content (Resemble: {pillar_label}). Low frame confidence reduced the scored weight — treat this result with caution."
+        elif weighted_score < 0.3:
             summary = f"Video analysis found no deepfake indicators ({weighted_score:.0%} suspicion score)."
         elif weighted_score < 0.6:
             summary = f"Video analysis inconclusive — {weighted_score:.0%} suspicion score across {resemble_frame_count} frames."
