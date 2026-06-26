@@ -230,6 +230,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "signals":               [],
                 "summary":                           "No human subject detected in video frames — deepfake analysis not applicable.",
                 "high_variance":                     False,
+                "resemble_video_score":              pillar_score_raw,
                 "video_job_audio_score":             video_job_audio_score,
                 "video_job_audio_label":             video_job_audio_label,
                 "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
