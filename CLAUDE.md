@@ -148,6 +148,40 @@ Stripe MCP active. Secret key set manually in `.claude/settings.json` — never 
 
 ---
 
+## Stage 6 billing Workers
+
+Three Workers deployed separately. Deploy commands:
+
+```bash
+npx wrangler@latest deploy --config cloudflare/wrangler-stripe-checkout.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-stripe-webhook.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-revenuecat.toml
+```
+
+Migration (run once):
+```bash
+npx wrangler@latest d1 migrations apply skept-auth --remote
+```
+
+**Secrets to provision after deploy — do not commit values:**
+
+`skept-stripe-checkout`:
+- `STRIPE_SECRET_KEY` — Stripe secret key (test: `sk_test_...`, live: `sk_live_...`)
+- `STRIPE_PRICE_IDS` — JSON string mapping tier+period to Stripe price IDs, e.g. `{"plus_monthly":"price_xxx","plus_annual":"price_xxx","pro_monthly":"price_xxx","pro_annual":"price_xxx","max_monthly":"price_xxx","max_annual":"price_xxx"}`
+- `ALLOWED_ORIGIN` — e.g. `https://skept.co`
+
+`skept-stripe-webhook`:
+- `STRIPE_WEBHOOK_SECRET` — signing secret from Stripe dashboard → Webhooks
+- `STRIPE_SECRET_KEY` — Stripe secret key
+
+`skept-revenuecat-webhook`:
+- `REVENUECAT_WEBHOOK_SECRET` — shared secret from RevenueCat dashboard → Integrations → Webhooks
+- `REVENUECAT_PRODUCT_TIERS` — JSON string mapping RC product IDs to tier names, e.g. `{"skept_plus_monthly":"plus","skept_plus_annual":"plus","skept_pro_monthly":"pro","skept_pro_annual":"pro","skept_max_monthly":"max","skept_max_annual":"max"}`
+
+**Stripe subscription metadata requirement:** Stripe subscriptions must have `metadata.tier` set to `plus`/`pro`/`max` for webhook handlers to resolve the correct tier. Set this in the Stripe dashboard or via the checkout session `subscription_data[metadata][tier]` param (already wired in stripe-checkout-worker.js).
+
+---
+
 ## Working principles
 
 - Edit `main.py` for all pipeline and UI changes.
