@@ -133,12 +133,12 @@ async def run_deepfake(video_path: str) -> dict:
 
         if resp.status_code != 200:
             logger.warning("[deepfake] Resemble API returned %d: %r", resp.status_code, resp.text[:200])
-            return {**_error_result(f"Resemble API error {resp.status_code}"), **sample_meta}
+            return {**_error_result(f"Resemble API error {resp.status_code}"), "video_job_audio_label": None, **sample_meta}
 
         data = resp.json()
         if not data.get("success"):
             logger.warning("[deepfake] Resemble success=false: %r", resp.text[:300])
-            return {**_error_result("Resemble returned success=false"), **sample_meta}
+            return {**_error_result("Resemble returned success=false"), "video_job_audio_label": None, **sample_meta}
 
         item             = data.get("item", {})
         video_metrics    = item.get("video_metrics", {})
@@ -147,16 +147,16 @@ async def run_deepfake(video_path: str) -> dict:
         children         = video_metrics.get("children") or []
 
         # Extract embedded audio score from the video job response (§3.42)
-        _audio_raw = item.get("metrics", {}).get("aggregated_score")
+        _audio_raw   = item.get("metrics", {}).get("aggregated_score")
+        _audio_label = item.get("metrics", {}).get("label")
         if _audio_raw is not None:
             _audio_raw_f = float(_audio_raw)
-            video_job_audio_score = (
-                None if _audio_raw_f == -1.0
-                else round(max(0.0, min(1.0, (_audio_raw_f + 1.0) / 2.0)), 4)
-            )
+            video_job_audio_score = None if _audio_raw_f == -1.0 else round(_audio_raw_f, 6)
         else:
             video_job_audio_score = None
-        print(f"[deepfake] video_job_audio_score={video_job_audio_score}", flush=True)
+        video_job_audio_label = _audio_label
+        _score_str = f"{float(_audio_raw):.6f}" if _audio_raw is not None else "None"
+        print(f"[deepfake] video_job_audio_score={_score_str} video_job_audio_label={_audio_label}", flush=True)
         video_job_audio_exclusion_reason = (
             "no_speech_detected" if video_job_audio_score is None and _audio_raw is not None
             else "no_audio_stream" if video_job_audio_score is None
@@ -184,7 +184,7 @@ async def run_deepfake(video_path: str) -> dict:
 
         if pillar_score_raw is None:
             logger.warning("[deepfake] no video_metrics.score in Resemble response")
-            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, "video_job_audio_exclusion_reason": video_job_audio_exclusion_reason, "c2pa_resemble_status": c2pa_resemble_status, **sample_meta}
+            return {**_error_result("No video_metrics.score in Resemble response"), "video_job_audio_score": video_job_audio_score, "video_job_audio_label": video_job_audio_label, "video_job_audio_exclusion_reason": video_job_audio_exclusion_reason, "c2pa_resemble_status": c2pa_resemble_status, **sample_meta}
 
         pillar_score_raw = float(pillar_score_raw)
         print(f"[deepfake] video_metrics.score={pillar_score_raw} video_metrics.label={pillar_label}", flush=True)
@@ -201,6 +201,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "summary":               "Insufficient frame data from Resemble — deepfake analysis excluded.",
                 "high_variance":                    False,
                 "video_job_audio_score":             video_job_audio_score,
+                "video_job_audio_label":             video_job_audio_label,
                 "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
                 "c2pa_resemble_status":              c2pa_resemble_status,
                 **sample_meta,
@@ -230,6 +231,7 @@ async def run_deepfake(video_path: str) -> dict:
                 "summary":                           "No human subject detected in video frames — deepfake analysis not applicable.",
                 "high_variance":                     False,
                 "video_job_audio_score":             video_job_audio_score,
+                "video_job_audio_label":             video_job_audio_label,
                 "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
                 "c2pa_resemble_status":              c2pa_resemble_status,
                 **sample_meta,
@@ -308,6 +310,7 @@ async def run_deepfake(video_path: str) -> dict:
             "frame_confidence":      resemble_frame_count / max(FRAMES_TO_SAMPLE, 1),
             "high_variance":                    high_variance,
             "video_job_audio_score":             video_job_audio_score,
+            "video_job_audio_label":             video_job_audio_label,
             "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
             "c2pa_resemble_status":              c2pa_resemble_status,
             **sample_meta,
