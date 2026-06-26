@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def analyse(video_job_audio_score: float | None, audio_exclusion_reason: str | None = None) -> dict:
+def analyse(video_job_audio_score: float | None, audio_exclusion_reason: str | None = None, video_job_audio_label: str | None = None) -> dict:
     if video_job_audio_score is None:
         if audio_exclusion_reason == "no_speech_detected":
             print(f"[audio] resemble sentinel -1.0 — no speech detected — pillar excluded (score=None)", flush=True)
@@ -50,7 +50,7 @@ def analyse(video_job_audio_score: float | None, audio_exclusion_reason: str | N
         }
 
     score = round(max(0.0, video_job_audio_score), 4)
-    print(f"[audio] resemble score={video_job_audio_score} label=None → pillar score={score:.4f}", flush=True)
+    print(f"[audio] resemble score={video_job_audio_score} label={video_job_audio_label} → pillar score={score:.4f}", flush=True)
 
     if score < 0.3:
         summary = f"Audio analysis found no voice-clone indicators ({score:.0%} suspicion score)."

@@ -309,6 +309,8 @@ async def run_deepfake(video_path: str) -> dict:
             "frames_sampled":        resemble_frame_count,
             "frame_confidence":      resemble_frame_count / max(FRAMES_TO_SAMPLE, 1),
             "high_variance":                    high_variance,
+            "resemble_certainty":               certainty_val,
+            "resemble_video_score":             pillar_score_raw,
             "video_job_audio_score":             video_job_audio_score,
             "video_job_audio_label":             video_job_audio_label,
             "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
