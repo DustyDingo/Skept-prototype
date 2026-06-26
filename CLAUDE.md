@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 25 Jun 2026**
+**Last updated: 26 Jun 2026**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -11,7 +11,7 @@ Single-file FastAPI app — all backend logic and frontend HTML live in `main.py
 
 **Analysers:**
 - `analysers/deepfake.py` — Resemble AI DETECT-3B Omni (video). Single API call to `/api/v1/detect`. Submits `df_sampled.mp4`. Returns per-frame scores via `video_metrics.children`. Certainty-weighted mean scoring. Also reads embedded audio score from same response (`item["metrics"]["aggregated_score"]`), stored as `video_job_audio_score`.
-- `analysers/audio.py` — reads `video_job_audio_score` written by `deepfake.py`. No standalone Resemble audio.wav submission. Source logged as `video_job_omni`.
+- `analysers/audio.py` — reads `video_job_audio_score` (`item["metrics"]["aggregated_score"]` from Resemble Omni video job, extracted in `deepfake.py` and passed via shared job dict). Scoring: `aggregated_score == -1.0` → `score=None` (no-speech sentinel, excluded from fusion, UI shows "No speech detected"); valid float → `score = max(aggregated_score, 0.0)` (Resemble's negative range means "definitely real"; negatives floor to 0.0); API error / missing field → `score=None` (not anchored at 0.50). No librosa heuristics, no consistency scalar, no `(raw+1)/2` conversion, no minimum floor (0.15), no standalone audio.wav Resemble call. Source logged as `video_job_omni`. Known gap: `video_job_audio_label` extracted in `deepfake.py` but not yet forwarded to `audio.py` (§3.72 — no scoring impact, fix pending).
 - `analysers/c2pa.py` — reads `resemble_c2pa` field from Resemble video job response. Maps `None → not_found`, present value → `found`. No hardcoded `skipped` — that only appears as an early pre-Resemble write which `c2pa.py` overwrites correctly after the job returns.
 - `analysers/metadata.py`, `analysers/source_rep.py`, `analysers/source_beh.py` — Source Details only. Not fusion contributors.
 
@@ -50,8 +50,8 @@ When `deepfake_final < 0.10 AND audio_final > 0.60`, deepfake is excluded from b
 - Endpoint: `/api/v1/detect`
 - Single API call per job (`df_sampled.mp4`). No separate audio.wav submission.
 - Audio score embedded in video job response: `item["metrics"]["aggregated_score"]`
-- Score conversion: `(raw + 1) / 2` — e.g. raw `0.2724` → Skept score `0.6362`. This conversion is intentional. Skept scores and Resemble dashboard scores will always differ and cannot be directly cross-referenced.
-- No-speech sentinel: when both Resemble audio scores return `-1.0`, route to `score=None` (excluded from fusion). Do not fall back to librosa.
+- Audio score formula: `score = max(aggregated_score, 0.0)` — Resemble's negative range means "definitely real"; negatives floor to 0.0. No `(raw+1)/2` conversion applied. Pending live data validation across more clip types (§3.70).
+- No-speech sentinel: `aggregated_score == -1.0` → `score=None` (excluded from fusion). Do not fall back to librosa.
 - C2PA: read from `resemble_c2pa` field in video job response.
 
 **Frame scalar (deepfake pillar):**
@@ -89,7 +89,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 ## UI rendering rules
 
 - Pillar active count = pillars with `score != None AND no excluded_reason`. When `audio_dubbing_pattern` fires, deepfake is excluded — count must reflect this (1/2, not 2/2).
-- `audio_dubbing_pattern` DOM label (`ref_53`) must be conditionally rendered server-side — absent from DOM entirely when condition not met. Do not use CSS toggle.
+- `audio_dubbing_pattern` DOM label (`ref_53`) is a pure client-side conditional: `const _dfExcluded = analysers.deepfake && analysers.deepfake.excluded_reason === 'audio_dubbing_pattern'` — the `<p id="dubbingNote">` element is only injected into `dubbingNoteContainer` when this condition is true. Not server-side generated.
 - Audio state copy: "Audio & voice clone — no speech detected" vs "Audio & voice clone — excluded" are distinct states and must use distinct copy.
 - Confidence meter: no zone-divider tick marks on track. Zone labels (`AUTHENTIC / INCONCLUSIVE / SUSPICIOUS`) are the only threshold indicators.
 
@@ -110,6 +110,9 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.62 | Resemble dashboard Audio % vs Skept Audio % divergence — disclosure note in evidence card (low priority) |
 | §3.63 | High-variance per-frame scores not surfaced in verdict UI |
 | §3.66 | URL validation before yt-dlp dispatch |
+| §3.69 | Frame confidence scalar suppresses verdict on text-to-video synthetic content (certainty low on generative content); correct fix is Sightengine reintroduction (§3.20) |
+| §3.70 | Audio `max(raw, 0.0)` formula — clean audio clusters near 0.0 correctly, but pending live data validation across more clip types |
+| §3.72 | `video_job_audio_label` not forwarded from `deepfake.py` to `audio.py` — no scoring impact, one-liner fix pending |
 
 ---
 
