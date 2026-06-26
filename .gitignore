@@ -1,3 +1,4 @@
 project-docs/
 backend/__pycache__/
 backend/analysers/__pycache__/
+.claude/settings.json

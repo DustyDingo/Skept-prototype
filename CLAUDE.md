@@ -136,6 +136,12 @@ Display font: Palatino Linotype (wordmark only). Body: Calibri.
 
 ---
 
+## Stripe MCP
+
+Stripe MCP active. Secret key set manually in `.claude/settings.json` — never commit this file if it contains a live key. `.claude/settings.json` is listed in `.gitignore`.
+
+---
+
 ## Working principles
 
 - Edit `main.py` for all pipeline and UI changes.
