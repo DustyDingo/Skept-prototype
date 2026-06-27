@@ -283,9 +283,9 @@ async def run_deepfake(video_path: str) -> dict:
             },
             {
                 "label":      "Video suspicion score",
-                "value":      f"{weighted_score:.0%}",
+                "value":      f"{deepfake_final:.0%}",
                 "weight":     "high",
-                "suspicious": weighted_score > 0.5,
+                "suspicious": deepfake_final > 0.5,
             },
         ]
 
