@@ -217,6 +217,11 @@ async def run_deepfake(video_path: str) -> dict:
             if frame.get("score") is not None and frame.get("certainty") is not None
         ]
 
+        # Top-level certainty scalar — extracted before non_human guard so that path can use it (§3.36/§3.69)
+        certainty        = video_metrics.get("certainty")
+        certainty_val    = float(certainty) if certainty is not None else 1.0
+        certainty_scalar = 0.5 + certainty_val * 0.5
+
         # Non-human content guard
         resemble_frame_count = len(frame_data)
         if resemble_frame_count <= 1:
@@ -231,6 +236,10 @@ async def run_deepfake(video_path: str) -> dict:
                 "summary":                           "No human subject detected in video frames — deepfake analysis not applicable.",
                 "high_variance":                     False,
                 "resemble_video_score":              pillar_score_raw,
+                "resemble_certainty":                certainty_val,
+                "certainty":                         certainty_val,
+                "final_score":                       round(max(0.0, min(1.0, pillar_score_raw * certainty_scalar)), 3),
+                "video_metrics_label":               pillar_label,
                 "video_job_audio_score":             video_job_audio_score,
                 "video_job_audio_label":             video_job_audio_label,
                 "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
@@ -254,11 +263,8 @@ async def run_deepfake(video_path: str) -> dict:
         # High-variance detection
         high_variance = stdev_val > 0.25
 
-        # Option A: top-level certainty scalar (§3.36)
-        certainty        = video_metrics.get("certainty")
-        certainty_val    = float(certainty) if certainty is not None else 1.0
-        certainty_scalar = 0.5 + certainty_val * 0.5
-        deepfake_final   = round(max(0.0, min(1.0, weighted_score * certainty_scalar)), 3)
+        # Certainty scalar already extracted before non_human guard above (§3.36/§3.69)
+        deepfake_final = round(max(0.0, min(1.0, weighted_score * certainty_scalar)), 3)
         print(
             f"[deepfake] resemble_frame_count={resemble_frame_count} "
             f"skept_frames={FRAMES_TO_SAMPLE} "
@@ -296,8 +302,7 @@ async def run_deepfake(video_path: str) -> dict:
             })
 
         if pillar_score_raw > 0.50 and deepfake_final < 0.15:
-            # Resemble's own label is suspicious but certainty scalar collapsed the pillar score — §3.73
-            summary = f"Frame-level analysis flagged suspicious content (Resemble: {pillar_label}). Low frame confidence reduced the scored weight — treat this result with caution."
+            summary = "Visual analysis score adjusted for low face-detection coverage."
         elif weighted_score < 0.3:
             summary = f"Video analysis found no deepfake indicators ({weighted_score:.0%} suspicion score)."
         elif weighted_score < 0.6:
@@ -315,6 +320,7 @@ async def run_deepfake(video_path: str) -> dict:
             "high_variance":                    high_variance,
             "resemble_certainty":               certainty_val,
             "resemble_video_score":             pillar_score_raw,
+            "video_metrics_label":              pillar_label,
             "video_job_audio_score":             video_job_audio_score,
             "video_job_audio_label":             video_job_audio_label,
             "video_job_audio_exclusion_reason":  video_job_audio_exclusion_reason,
