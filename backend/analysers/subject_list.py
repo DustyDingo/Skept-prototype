@@ -5,6 +5,7 @@ On fetch failure the cache is not set, so the next job retries.
 """
 
 import logging
+import time
 
 import requests
 
@@ -13,7 +14,10 @@ logger = logging.getLogger(__name__)
 _subject_list_cache: list[str] | None = None
 
 _SPARQL_URL = "https://query.wikidata.org/sparql"
-_TIMEOUT = 10
+_TIMEOUT = 20
+_RETRY_ATTEMPTS = 3
+_RETRY_DELAY = 2
+_MIN_NAMES_THRESHOLD = 5
 
 _QUERY = """\
 SELECT DISTINCT ?item ?itemLabel WHERE {
@@ -64,26 +68,46 @@ def get_subject_list() -> list[str]:
     global _subject_list_cache
     if _subject_list_cache is not None:
         return _subject_list_cache
-    try:
-        resp = requests.get(
-            _SPARQL_URL,
-            params={"query": _QUERY, "format": "json"},
-            headers={"User-Agent": "Skept-prototype/0.1 (skept.co)"},
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        names = []
-        for binding in data.get("results", {}).get("bindings", []):
-            label = binding.get("itemLabel", {}).get("value", "")
-            # Skip bare QIDs returned when no English label exists
-            if label and not (label.startswith("Q") and label[1:].isdigit()):
-                names.append(label)
-        _subject_list_cache = names
+    names: list[str] = []
+    last_exc: Exception | None = None
+    for attempt in range(1, _RETRY_ATTEMPTS + 1):
+        try:
+            resp = requests.get(
+                _SPARQL_URL,
+                params={"query": _QUERY, "format": "json"},
+                headers={"User-Agent": "Skept-prototype/0.1 (skept.co)"},
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            names = []
+            for binding in data.get("results", {}).get("bindings", []):
+                label = binding.get("itemLabel", {}).get("value", "")
+                # Skip bare QIDs returned when no English label exists
+                if label and not (label.startswith("Q") and label[1:].isdigit()):
+                    names.append(label)
+            break
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "[subject_list] Wikidata fetch attempt %d/%d failed: %s",
+                attempt, _RETRY_ATTEMPTS, exc,
+            )
+            print(f"[subject_list] Wikidata fetch attempt {attempt}/{_RETRY_ATTEMPTS} failed: {exc}", flush=True)
+            if attempt < _RETRY_ATTEMPTS:
+                time.sleep(_RETRY_DELAY)
+    if not names and last_exc is not None:
+        logger.warning("[subject_list] Wikidata fetch FAILED (lazy) — subject identity silent for this job: %s", last_exc)
+        print(f"[subject_list] Wikidata fetch FAILED (lazy) — subject identity silent for this job: {last_exc}", flush=True)
+        return []
+    if len(names) < _MIN_NAMES_THRESHOLD:
+        logger.warning("[subject_list] Wikidata fetch degraded — only %d names loaded", len(names))
+        print(f"[subject_list] Wikidata fetch degraded — only {len(names)} names loaded", flush=True)
+    else:
         logger.info("[subject_list] Wikidata fetch OK — %d names loaded (lazy)", len(names))
         print(f"[subject_list] Wikidata fetch OK — {len(names)} names loaded (lazy)", flush=True)
-        return _subject_list_cache
-    except Exception as exc:
-        logger.warning("[subject_list] Wikidata fetch FAILED (lazy) — subject identity silent for this job: %s", exc)
-        print(f"[subject_list] Wikidata fetch FAILED (lazy) — subject identity silent for this job: {exc}", flush=True)
-        return []
+    sorted_names = sorted(names)
+    logger.info("[subject_list] subject_list=%s", sorted_names)
+    print(f"[subject_list] subject_list={sorted_names}", flush=True)
+    _subject_list_cache = names
+    return _subject_list_cache
