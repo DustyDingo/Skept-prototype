@@ -106,6 +106,10 @@ def get_subject_list() -> list[str]:
     else:
         logger.info("[subject_list] Wikidata fetch OK — %d names loaded (lazy)", len(names))
         print(f"[subject_list] Wikidata fetch OK — {len(names)} names loaded (lazy)", flush=True)
+    if "Donald Trump" not in names:
+        logger.info("[subject_identity] Q22686 label missing from Wikidata response — hardcoded fallback added: Donald Trump")
+        print("[subject_identity] Q22686 label missing from Wikidata response — hardcoded fallback added: Donald Trump", flush=True)
+        names.append("Donald Trump")
     sorted_names = sorted(names)
     logger.info("[subject_list] subject_list=%s", sorted_names)
     print(f"[subject_list] subject_list={sorted_names}", flush=True)
