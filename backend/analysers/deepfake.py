@@ -250,24 +250,17 @@ async def run_deepfake(video_path: str) -> dict:
         frame_scores = [s for s, c in frame_data]
         stdev_val    = statistics.stdev(frame_scores) if len(frame_scores) > 1 else 0.0
 
-        # Certainty-weighted mean of frame scores
-        total_certainty = sum(c for _, c in frame_data)
-        if total_certainty == 0:
-            weighted_score = pillar_score_raw
-            print("[deepfake] frame_certainty_fallback=True", flush=True)
-            logger.warning("[deepfake] frame_certainty_fallback=True total_certainty=0")
-        else:
-            weighted_score = sum(s * c for s, c in frame_data) / total_certainty
-
         # High-variance detection
         high_variance = stdev_val > 0.25
 
-        # Certainty scalar (§3.75): capped at 1.0 when Resemble processed >= skept_frames
-        deepfake_final = round(max(0.0, min(1.0, weighted_score * certainty_scalar)), 3)
+        # Use clip-level video_metrics.score as base; scale by certainty scalar (§3.75 follow-up)
+        base_score = pillar_score_raw
+        certainty_weighted_score = base_score * certainty_scalar
+        deepfake_final = round(max(0.0, min(1.0, certainty_weighted_score)), 3)
         print(
             f"[deepfake] resemble_frame_count={resemble_frame_count} "
             f"skept_frames={FRAMES_TO_SAMPLE} "
-            f"certainty_weighted_score={weighted_score:.4f} "
+            f"certainty_weighted_score={certainty_weighted_score:.4f} "
             f"certainty={certainty_val:.4f} "
             f"final_score={deepfake_final:.4f}",
             flush=True,
@@ -302,12 +295,12 @@ async def run_deepfake(video_path: str) -> dict:
 
         if pillar_score_raw > 0.50 and deepfake_final < 0.15:
             summary = "Visual analysis score adjusted for low face-detection coverage."
-        elif weighted_score < 0.3:
-            summary = f"Video analysis found no deepfake indicators ({weighted_score:.0%} suspicion score)."
-        elif weighted_score < 0.6:
-            summary = f"Video analysis inconclusive — {weighted_score:.0%} suspicion score across {resemble_frame_count} frames."
+        elif base_score < 0.3:
+            summary = f"Video analysis found no deepfake indicators ({base_score:.0%} suspicion score)."
+        elif base_score < 0.6:
+            summary = f"Video analysis inconclusive — {base_score:.0%} suspicion score across {resemble_frame_count} frames."
         else:
-            summary = f"Video analysis flags deepfake characteristics — {weighted_score:.0%} suspicion score."
+            summary = f"Video analysis flags deepfake characteristics — {base_score:.0%} suspicion score."
 
         return {
             "status":                "complete",
