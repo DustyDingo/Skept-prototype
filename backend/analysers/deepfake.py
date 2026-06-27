@@ -48,7 +48,7 @@ def _probe_duration(video_path: str) -> float | None:
 
 
 def _sample_video(video_path: str, duration: float) -> tuple[str, dict]:
-    """Extract 6s from start and 6s centred on midpoint, concat into a single file.
+    """Extract 4s from start and 4s centred on midpoint, concat into a single file.
 
     Intermediate files are cleaned up before returning. Caller must delete the
     returned path after Resemble submission.
@@ -59,15 +59,15 @@ def _sample_video(video_path: str, duration: float) -> tuple[str, dict]:
     concat   = workdir / "df_concat.txt"
     output   = workdir / "df_sampled.mp4"
 
-    b_start = duration / 2.0 - 3.0
-    b_end   = b_start + 6.0
+    b_start = duration / 2.0 - 2.0
+    b_end   = b_start + 4.0
 
     subprocess.run(
-        ["ffmpeg", "-ss", "0", "-i", video_path, "-t", "6", "-c", "copy", str(seg_a), "-y", "-loglevel", "error"],
+        ["ffmpeg", "-ss", "0", "-i", video_path, "-t", "4", "-c", "copy", str(seg_a), "-y", "-loglevel", "error"],
         capture_output=True, timeout=60,
     )
     subprocess.run(
-        ["ffmpeg", "-ss", str(b_start), "-i", video_path, "-t", "6", "-c", "copy", str(seg_b), "-y", "-loglevel", "error"],
+        ["ffmpeg", "-ss", str(b_start), "-i", video_path, "-t", "4", "-c", "copy", str(seg_b), "-y", "-loglevel", "error"],
         capture_output=True, timeout=60,
     )
     concat.write_text(f"file '{seg_a}'\nfile '{seg_b}'\n")
@@ -85,16 +85,16 @@ def _sample_video(video_path: str, duration: float) -> tuple[str, dict]:
     meta = {
         "sampled":               True,
         "original_duration_sec": round(duration, 1),
-        "sample_strategy":       "start_mid_6s",
+        "sample_strategy":       "start_mid_4s",
         "segment_a_start":       0,
-        "segment_a_end":         6,
+        "segment_a_end":         4,
         "segment_b_start":       round(b_start, 1),
         "segment_b_end":         round(b_end, 1),
     }
     print(
-        f"[deepfake] sampled=True strategy=start_mid_6s "
+        f"[deepfake] sampled=True strategy=start_mid_4s "
         f"original_duration={duration:.1f} "
-        f"seg_a=0-6 seg_b={b_start:.1f}-{b_end:.1f}",
+        f"seg_a=0-4 seg_b={b_start:.1f}-{b_end:.1f}",
         flush=True,
     )
     return str(output), meta
@@ -108,10 +108,10 @@ async def run_deepfake(video_path: str) -> dict:
     sampled_path = None
 
     try:
-        # §3.44 — 6s start + 6s mid segment strategy
+        # §3.44 — 4s start + 4s mid segment strategy
         duration = await asyncio.to_thread(_probe_duration, video_path)
         sample_meta: dict = {"sampled": False}
-        if duration is not None and duration > 12:
+        if duration is not None and duration > 8:
             sampled_path, sample_meta = await asyncio.to_thread(_sample_video, video_path, duration)
             submit_path = sampled_path
         else:
