@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 26 Jun 2026**
+**Last updated: 27 Jun 2026**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -51,13 +51,16 @@ When `deepfake_final < 0.10 AND audio_final > 0.60`, deepfake is excluded from b
 - Single API call per job (`df_sampled.mp4`). No separate audio.wav submission.
 - Audio score embedded in video job response: `item["metrics"]["aggregated_score"]`
 - Audio score formula: `score = max(aggregated_score, 0.0)` — Resemble's negative range means "definitely real"; negatives floor to 0.0. No `(raw+1)/2` conversion applied. Pending live data validation across more clip types (§3.70).
+- Calibration note (27 Jun 2026): On genuinely clean audio, Resemble's `aggregated_score` clusters near `0.0` rather than near `-1.0`. This means `max(0.0, 0.0) = 0.0` is the structural floor — audio pillar will rarely score below 1–2% on authentic clips. This inflates the audio contribution to fusion slightly on clean content. No threshold adjustment pending — requires more live data. Monitor across a broader clip set before acting.
 - No-speech sentinel: `aggregated_score == -1.0` → `score=None` (excluded from fusion). Do not fall back to librosa.
 - C2PA: read from `resemble_c2pa` field in video job response.
 
 **Frame scalar (deepfake pillar):**
 - `resemble_frame_count` — Resemble's internal count of ImageResult nodes across the submitted clip (not Skept's sample count).
 - `skept_frames` — Skept's requested frame sample count (default 6).
-- Certainty scalar = certainty-weighted mean from per-frame certainty values. Not `resemble_frame_count / skept_frames`.
+- Certainty scalar formula (confirmed §3.75, 27 Jun 2026): `certainty = min(skept_frames, resemble_frame_count) / skept_frames` — caps at 1.0 when Resemble processed ≥ SKEPT_FRAMES frames. Previous formula was directionally inverted.
+- Base score: `video_metrics.score` is used directly before certainty weighting. The legacy per-frame mean path (inherited from scamai architecture) has been removed.
+- Confirmed result (Biden/alien Reel): `certainty=1.0000, certainty_weighted_score=0.6006, final_score=0.6010` → 60% Likely Manipulated. Matches Resemble's own "Deepfake Detected" verdict.
 
 **Pillar independence caveat:**
 Both video and audio pillars derive from the same Resemble DETECT-3B Omni video job. Reduced independence is a documented Phase 1 trade-off. Sightengine reintroduction is the architectural fix.
