@@ -217,13 +217,12 @@ async def run_deepfake(video_path: str) -> dict:
             if frame.get("score") is not None and frame.get("certainty") is not None
         ]
 
-        # Top-level certainty scalar — extracted before non_human guard so that path can use it (§3.36/§3.69)
-        certainty        = video_metrics.get("certainty")
-        certainty_val    = float(certainty) if certainty is not None else 1.0
-        certainty_scalar = 0.5 + certainty_val * 0.5
+        # Certainty scalar: 1.0 when Resemble processed >= skept_frames; partial credit otherwise (§3.75)
+        resemble_frame_count = len(frame_data)
+        certainty_val    = min(FRAMES_TO_SAMPLE, resemble_frame_count) / FRAMES_TO_SAMPLE
+        certainty_scalar = certainty_val
 
         # Non-human content guard
-        resemble_frame_count = len(frame_data)
         if resemble_frame_count <= 1:
             print(f"[deepfake] guard=non_human resemble_frame_count={resemble_frame_count} skept_frames={FRAMES_TO_SAMPLE} result=excluded", flush=True)
             logger.info("[deepfake] status=non_human resemble_frame_count=%d score=None", resemble_frame_count)
@@ -263,7 +262,7 @@ async def run_deepfake(video_path: str) -> dict:
         # High-variance detection
         high_variance = stdev_val > 0.25
 
-        # Certainty scalar already extracted before non_human guard above (§3.36/§3.69)
+        # Certainty scalar (§3.75): capped at 1.0 when Resemble processed >= skept_frames
         deepfake_final = round(max(0.0, min(1.0, weighted_score * certainty_scalar)), 3)
         print(
             f"[deepfake] resemble_frame_count={resemble_frame_count} "
