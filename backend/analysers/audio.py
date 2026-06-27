@@ -13,6 +13,10 @@ Three cases evaluated in order:
 Negative Resemble scores map to 0.0 (definitely real = 0% suspicious).
 Positive scores pass through directly as suspicion magnitude.
 
+audio_exclusion_reason is derived internally from video_job_audio_label:
+  label in ("real", "fake") → no_speech_detected (audio stream present, no speech found)
+  label is None             → no_audio_stream    (no audio stream, or API error/fallback)
+
 BIOMETRIC NOTE: No audio extraction or spectral representation is retained.
 """
 
@@ -21,29 +25,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def analyse(video_job_audio_score: float | None, audio_exclusion_reason: str | None = None, video_job_audio_label: str | None = None) -> dict:
+def analyse(video_job_audio_score: float | None, video_job_audio_label: str | None = None) -> dict:
     if video_job_audio_score is None:
-        if audio_exclusion_reason == "no_speech_detected":
-            print(f"[audio] resemble sentinel -1.0 — no speech detected — pillar excluded (score=None)", flush=True)
+        _reason = "no_speech_detected" if video_job_audio_label in ("real", "fake") else "no_audio_stream"
+        print(f"[audio] pillar excluded — reason: {_reason}", flush=True)
+        if _reason == "no_speech_detected":
             return {
                 "status":                 "complete",
                 "score":                  None,
                 "low_confidence":         False,
                 "resemble_status":        "no_speech",
                 "audio_extracted":        True,
-                "audio_exclusion_reason": audio_exclusion_reason,
+                "audio_exclusion_reason": "no_speech_detected",
                 "error":                  None,
                 "signals":                [],
                 "summary":                "No speech detected — audio analysis excluded.",
             }
-        print(f"[audio] resemble score unavailable — pillar excluded (score=None)", flush=True)
         return {
             "status":                 "complete",
             "score":                  None,
             "low_confidence":         False,
             "resemble_status":        "error",
             "audio_extracted":        False,
-            "audio_exclusion_reason": audio_exclusion_reason,
+            "audio_exclusion_reason": "no_audio_stream",
             "error":                  None,
             "signals":                [],
             "summary":                "Audio analysis unavailable.",
