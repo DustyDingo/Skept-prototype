@@ -220,7 +220,7 @@ async function handleRequestLink(request, env, origin) {
 
   // Send magic link via Resend
   // Use `email` from request body — guaranteed equal to stored address by email_hash match
-  const magicLink = `https://skept.co/auth/verify?token=${rawToken}`;
+  const magicLink = `https://skept.co/?token=${rawToken}`;
 
   const emailText =
     `Tap this link to sign in to Skept. It expires in 15 minutes and can only be used once.\n\n` +
@@ -505,6 +505,66 @@ async function handleDeleteAccount(request, env, origin) {
   return jsonRes({ ok: true, cooldown_expires_at: cooldownExpiresAt }, 200, origin);
 }
 
+async function handleVerifyPost(request, env, origin) {
+  let payload;
+  try { payload = await request.json(); }
+  catch { return jsonRes({ error: 'invalid_json' }, 400, origin); }
+
+  const rawToken = String(payload.token || '').trim();
+  if (!rawToken) return jsonRes({ error: 'missing_token' }, 400, origin);
+
+  const tokenHash = await sha256hex(rawToken);
+  const ts = nowSec();
+
+  const tokenRow = await env.SKEPT_AUTH_DB
+    .prepare("SELECT id, user_id, used, expires_at FROM auth_tokens WHERE token_hash = ? AND type = 'magic_link'")
+    .bind(tokenHash)
+    .first();
+
+  if (!tokenRow) return jsonRes({ error: 'invalid_token' }, 401, origin);
+  if (tokenRow.used === 1) return jsonRes({ error: 'token_already_used' }, 401, origin);
+  if (tokenRow.expires_at < ts) return jsonRes({ error: 'token_expired' }, 401, origin);
+
+  const updated = await env.SKEPT_AUTH_DB
+    .prepare('UPDATE auth_tokens SET used=1, used_at=? WHERE id=? AND used=0')
+    .bind(ts, tokenRow.id)
+    .run();
+  if (updated.meta.changes === 0) return jsonRes({ error: 'token_already_used' }, 401, origin);
+
+  const tierRow = await env.SKEPT_AUTH_DB
+    .prepare('SELECT tier FROM users WHERE id = ?')
+    .bind(tokenRow.user_id)
+    .first();
+  const tier = tierRow?.tier || 'free';
+
+  const sessionId = crypto.randomUUID();
+  const sessionExpires = ts + SESSION_TTL_S;
+  await env.AUTH_SESSIONS.put(
+    `session:${sessionId}`,
+    JSON.stringify({ user_id: tokenRow.user_id, tier, created_at: ts, expires_at: sessionExpires }),
+    { expirationTtl: SESSION_TTL_S }
+  );
+
+  const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const ipHash = await sha256hex(clientIp + (env.IP_SALT || ''));
+  const sessionTokenHash = await sha256hex(sessionId);
+  await env.SKEPT_AUTH_DB
+    .prepare(
+      `INSERT INTO auth_tokens (id, user_id, token_hash, type, used, expires_at, ip_hash, created_at)
+       VALUES (?, ?, ?, 'session_audit', 0, ?, ?, ?)`
+    )
+    .bind(crypto.randomUUID(), tokenRow.user_id, sessionTokenHash, sessionExpires, ipHash, ts)
+    .run();
+
+  await env.SKEPT_AUTH_DB
+    .prepare('UPDATE users SET updated_at=? WHERE id=?')
+    .bind(ts, tokenRow.user_id)
+    .run();
+
+  const cookie = `skept_session=${sessionId}; HttpOnly; Secure; SameSite=Strict; Domain=skept.co; Path=/; Max-Age=604800`;
+  return jsonRes({ ok: true }, 200, origin, { 'Set-Cookie': cookie });
+}
+
 // ── MAIN EXPORT ───────────────────────────────────────────────────────
 
 export default {
@@ -518,7 +578,9 @@ export default {
       const m = request.method;
       const p = url.pathname;
 
+      if (m === 'POST' && p === '/api/auth/request')        return await handleRequestLink(request, env, origin);
       if (m === 'POST' && p === '/api/auth/request-link')  return await handleRequestLink(request, env, origin);
+      if (m === 'POST' && p === '/api/auth/verify')         return await handleVerifyPost(request, env, origin);
       if (m === 'GET'  && p === '/api/auth/verify')         return await handleVerify(request, env, url);
       if (m === 'GET'  && p === '/api/auth/me')             return await handleMe(request, env, origin);
       if (m === 'POST' && p === '/api/auth/session')        return await handleSession(request, env, origin);
