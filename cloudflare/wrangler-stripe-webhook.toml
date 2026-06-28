@@ -1,5 +1,5 @@
 name = "skept-stripe-webhook"
-main = "cloudflare/stripe-webhook-worker.js"
+main = "stripe-webhook-worker.js"
 compatibility_date = "2026-04-27"
 
 [[d1_databases]]
@@ -7,10 +7,17 @@ binding = "SKEPT_AUTH_DB"
 database_name = "skept-auth"
 database_id = "b81343be-4703-4d26-959e-46781843d563"
 
-# [[routes]] — uncomment when wiring skept.co/api/webhooks/stripe
+[[d1_databases]]
+binding = "SKEPT_ANALYSIS_DB"
+database_name = "skept-analysis"
+database_id = "f1c17fe3-fd52-48cb-a22c-f4658918e301"
+
+# [[routes]] — uncomment when registering endpoint URL in Stripe dashboard
+# Endpoint: POST /webhook
 # pattern = "skept.co/api/webhooks/stripe"
 # zone_name = "skept.co"
 
 # Secrets — set via `wrangler secret put --config cloudflare/wrangler-stripe-webhook.toml`, do NOT commit:
 #   wrangler secret put STRIPE_WEBHOOK_SECRET  --config cloudflare/wrangler-stripe-webhook.toml
 #   wrangler secret put STRIPE_SECRET_KEY      --config cloudflare/wrangler-stripe-webhook.toml
+#   wrangler secret put STRIPE_PRICE_IDS       --config cloudflare/wrangler-stripe-webhook.toml

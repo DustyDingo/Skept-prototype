@@ -1,4 +1,4 @@
-import { updateUserTier } from './billing-utils.js';
+import { updateUserTier, QUOTA_LIMITS } from './billing-utils.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -40,6 +40,13 @@ async function verifyStripeSignature(rawBody, sigHeader, secret) {
   return diff === 0;
 }
 
+async function stripeGet(path, secretKey) {
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    headers: { 'Authorization': 'Basic ' + btoa(secretKey + ':') },
+  });
+  return res.json();
+}
+
 async function lookupUserByCustomerId(db, stripeCustomerId) {
   const row = await db.prepare(
     'SELECT id FROM users WHERE stripe_customer_id = ?'
@@ -47,12 +54,17 @@ async function lookupUserByCustomerId(db, stripeCustomerId) {
   return row ? row.id : null;
 }
 
+function tierFromPriceKey(priceKey) {
+  // price key format: '{tier}_{period}' e.g. 'lite_monthly', 'plus_annual'
+  return priceKey.split('_')[0];
+}
+
 export default {
   async fetch(request, env) {
     const { method } = request;
     const url = new URL(request.url);
 
-    if (method !== 'POST' || url.pathname !== '/api/webhooks/stripe') {
+    if (method !== 'POST' || url.pathname !== '/webhook') {
       return json({ error: 'not_found' }, 404);
     }
 
@@ -76,48 +88,124 @@ export default {
     const obj = data?.object;
 
     try {
-      if (type === 'customer.subscription.created' || type === 'customer.subscription.updated') {
-        const customerId = obj.customer;
-        const subscriptionId = obj.id;
-        const status = obj.status;
-        const periodEnd = obj.current_period_end;
-        const tier = obj.metadata?.tier;
-
-        const userId = await lookupUserByCustomerId(env.SKEPT_AUTH_DB, customerId);
+      // ── checkout.session.completed ──────────────────────────────────────────
+      if (type === 'checkout.session.completed') {
+        const userId = obj.metadata?.user_id;
         if (!userId) {
-          console.warn(`[stripe-webhook] ${type}: no user for customer ${customerId}`);
+          console.warn('[stripe-webhook] checkout.session.completed: missing metadata.user_id');
           return json({ received: true });
         }
 
-        if (status === 'active' || status === 'trialing') {
-          if (!tier) {
-            console.warn(`[stripe-webhook] ${type}: subscription ${subscriptionId} missing metadata.tier`);
+        const stripeCustomerId = obj.customer;
+        const topupPack = obj.metadata?.topup_pack;
+
+        if (topupPack) {
+          // Top-up consumable payment
+          const TOPUP_CREDITS = { small: 5, medium: 10, large: 20 };
+          const credits = TOPUP_CREDITS[topupPack];
+          if (!credits) {
+            console.warn(`[stripe-webhook] checkout.session.completed: unknown topup_pack ${topupPack}`);
             return json({ received: true });
           }
+          const topupExpiresAt = Math.floor(Date.now() / 1000) + 7776000; // 90 days
+          await env.SKEPT_ANALYSIS_DB.prepare(
+            'UPDATE quota_usage SET topup_credits = topup_credits + ?, topup_expires_at = ? WHERE user_id = ?'
+          ).bind(credits, topupExpiresAt, userId).run();
+          console.log(`[stripe-webhook] topup userId=${userId} pack=${topupPack} credits=${credits}`);
+          return json({ received: true });
+        }
+
+        // Subscription checkout — fetch line items to resolve tier
+        let priceIds;
+        try {
+          priceIds = JSON.parse(env.STRIPE_PRICE_IDS);
+        } catch {
+          console.error('[stripe-webhook] STRIPE_PRICE_IDS is not valid JSON');
+          return json({ received: true });
+        }
+
+        const lineItems = await stripeGet(
+          `/v1/checkout/sessions/${obj.id}/line_items`,
+          env.STRIPE_SECRET_KEY
+        );
+        const priceId = lineItems.data?.[0]?.price?.id;
+        if (!priceId) {
+          console.warn('[stripe-webhook] checkout.session.completed: could not resolve price_id from line items');
+          return json({ received: true });
+        }
+
+        const priceKey = Object.keys(priceIds).find(k => priceIds[k] === priceId);
+        if (!priceKey) {
+          console.warn(`[stripe-webhook] checkout.session.completed: no tier mapping for price_id ${priceId}`);
+          return json({ received: true });
+        }
+
+        const tier = tierFromPriceKey(priceKey);
+        const subscriptionRef = obj.subscription ?? null;
+
+        await updateUserTier(env.SKEPT_AUTH_DB, userId, {
+          tier,
+          tierExpiresAt: null,
+          subscriptionSource: 'stripe',
+          subscriptionRef,
+          stripeCustomerId,
+        }, env.SKEPT_ANALYSIS_DB);
+
+        console.log(`[stripe-webhook] checkout.session.completed userId=${userId} tier=${tier} sub=${subscriptionRef}`);
+
+      // ── customer.subscription.updated ──────────────────────────────────────
+      } else if (type === 'customer.subscription.updated') {
+        const metaUserId = obj.metadata?.user_id;
+        const userId = metaUserId || await lookupUserByCustomerId(env.SKEPT_AUTH_DB, obj.customer);
+        if (!userId) {
+          console.warn(`[stripe-webhook] customer.subscription.updated: no user for customer ${obj.customer}`);
+          return json({ received: true });
+        }
+
+        const status = obj.status;
+        if (status === 'active' || status === 'trialing') {
+          let priceIds;
+          try {
+            priceIds = JSON.parse(env.STRIPE_PRICE_IDS);
+          } catch {
+            console.error('[stripe-webhook] STRIPE_PRICE_IDS is not valid JSON');
+            return json({ received: true });
+          }
+
+          const priceId = obj.items?.data?.[0]?.price?.id;
+          const priceKey = priceId ? Object.keys(priceIds).find(k => priceIds[k] === priceId) : null;
+          const tier = priceKey ? tierFromPriceKey(priceKey) : obj.metadata?.tier;
+
+          if (!tier) {
+            console.warn(`[stripe-webhook] customer.subscription.updated: cannot resolve tier for sub ${obj.id}`);
+            return json({ received: true });
+          }
+
           await updateUserTier(env.SKEPT_AUTH_DB, userId, {
             tier,
-            tierExpiresAt: periodEnd,
+            tierExpiresAt: obj.current_period_end ?? null,
             subscriptionSource: 'stripe',
-            subscriptionRef: subscriptionId,
-          });
-          console.log(`[stripe-webhook] ${type} userId=${userId} tier=${tier} status=${status}`);
+            subscriptionRef: obj.id,
+          }, env.SKEPT_ANALYSIS_DB);
+
+          console.log(`[stripe-webhook] subscription.updated userId=${userId} tier=${tier} status=${status}`);
         } else if (status === 'canceled') {
           await updateUserTier(env.SKEPT_AUTH_DB, userId, {
             tier: 'free',
             tierExpiresAt: null,
             subscriptionSource: null,
             subscriptionRef: null,
-          });
-          console.log(`[stripe-webhook] ${type} userId=${userId} downgraded to free (status=canceled)`);
+          }, env.SKEPT_ANALYSIS_DB);
+          console.log(`[stripe-webhook] subscription.updated userId=${userId} downgraded to free (canceled)`);
         } else {
-          console.log(`[stripe-webhook] ${type} userId=${userId} status=${status} — no action`);
+          console.log(`[stripe-webhook] subscription.updated userId=${userId} status=${status} — no action`);
         }
 
+      // ── customer.subscription.deleted ──────────────────────────────────────
       } else if (type === 'customer.subscription.deleted') {
-        const customerId = obj.customer;
-        const userId = await lookupUserByCustomerId(env.SKEPT_AUTH_DB, customerId);
+        const userId = await lookupUserByCustomerId(env.SKEPT_AUTH_DB, obj.customer);
         if (!userId) {
-          console.warn(`[stripe-webhook] ${type}: no user for customer ${customerId}`);
+          console.warn(`[stripe-webhook] subscription.deleted: no user for customer ${obj.customer}`);
           return json({ received: true });
         }
         await updateUserTier(env.SKEPT_AUTH_DB, userId, {
@@ -125,45 +213,16 @@ export default {
           tierExpiresAt: null,
           subscriptionSource: null,
           subscriptionRef: null,
-        });
-        console.log(`[stripe-webhook] ${type} userId=${userId} downgraded to free`);
+        }, env.SKEPT_ANALYSIS_DB);
+        console.log(`[stripe-webhook] subscription.deleted userId=${userId} downgraded to free`);
 
-      } else if (type === 'invoice.payment_failed') {
-        const customerId = obj.customer;
-        const nextAttempt = obj.next_payment_attempt;
-        const userId = await lookupUserByCustomerId(env.SKEPT_AUTH_DB, customerId);
-        if (!userId) {
-          console.warn(`[stripe-webhook] ${type}: no user for customer ${customerId}`);
-          return json({ received: true });
-        }
-        const now = Math.floor(Date.now() / 1000);
-        await env.SKEPT_AUTH_DB.prepare(
-          'UPDATE users SET tier_expires_at = ?, updated_at = ? WHERE id = ?'
-        ).bind(nextAttempt ?? null, now, userId).run();
-        console.log(`[stripe-webhook] ${type} userId=${userId} grace until ${nextAttempt}`);
-
+      // ── invoice.payment_succeeded ───────────────────────────────────────────
       } else if (type === 'invoice.payment_succeeded') {
-        const customerId = obj.customer;
-        const subscriptionId = obj.subscription;
-        const lineItem = obj.lines?.data?.[0];
-        const periodEnd = lineItem?.period?.end;
-        const tier = lineItem?.metadata?.tier;
-        const userId = await lookupUserByCustomerId(env.SKEPT_AUTH_DB, customerId);
-        if (!userId) {
-          console.warn(`[stripe-webhook] ${type}: no user for customer ${customerId}`);
-          return json({ received: true });
-        }
-        if (!tier) {
-          console.warn(`[stripe-webhook] ${type}: invoice line missing metadata.tier for user ${userId}`);
-          return json({ received: true });
-        }
-        await updateUserTier(env.SKEPT_AUTH_DB, userId, {
-          tier,
-          tierExpiresAt: periodEnd ?? null,
-          subscriptionSource: 'stripe',
-          subscriptionRef: subscriptionId,
-        });
-        console.log(`[stripe-webhook] ${type} userId=${userId} tier=${tier} renewed`);
+        console.log(`[stripe-webhook] invoice.payment_succeeded customer=${obj.customer} sub=${obj.subscription} — log only`);
+
+      // ── invoice.payment_failed ──────────────────────────────────────────────
+      } else if (type === 'invoice.payment_failed') {
+        console.log(`[stripe-webhook] invoice.payment_failed customer=${obj.customer} next_attempt=${obj.next_payment_attempt} — log only`);
 
       } else {
         console.log(`[stripe-webhook] unhandled event type: ${type}`);
@@ -172,7 +231,7 @@ export default {
       return json({ received: true });
     } catch (err) {
       console.error(`[stripe-webhook] error handling ${type}:`, err.message);
-      // Still return 200 to prevent Stripe retry storms
+      // Return 200 to prevent Stripe retry storms
       return json({ received: true });
     }
   },

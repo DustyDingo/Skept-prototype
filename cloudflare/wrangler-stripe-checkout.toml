@@ -1,5 +1,5 @@
 name = "skept-stripe-checkout"
-main = "cloudflare/stripe-checkout-worker.js"
+main = "stripe-checkout-worker.js"
 compatibility_date = "2026-04-27"
 
 [[d1_databases]]
@@ -13,10 +13,11 @@ id = "acb86bfb713e453ab616053bdbc785f8"
 preview_id = "4367d8434b94480f9e38e6989d1c01ff"
 
 # [[routes]] — uncomment when wiring skept.co/api/billing/*
+# Endpoints: POST /api/billing/checkout  POST /api/billing/portal
 # pattern = "skept.co/api/billing/*"
 # zone_name = "skept.co"
 
 # Secrets — set via `wrangler secret put --config cloudflare/wrangler-stripe-checkout.toml`, do NOT commit:
 #   wrangler secret put STRIPE_SECRET_KEY   --config cloudflare/wrangler-stripe-checkout.toml
 #   wrangler secret put STRIPE_PRICE_IDS    --config cloudflare/wrangler-stripe-checkout.toml
-#   wrangler secret put ALLOWED_ORIGIN      --config cloudflare/wrangler-stripe-checkout.toml
+#   wrangler secret put JWT_SECRET          --config cloudflare/wrangler-stripe-checkout.toml
