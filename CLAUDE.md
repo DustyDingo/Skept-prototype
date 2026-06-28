@@ -162,7 +162,7 @@ Three billing Workers are live on the Cloudflare production stack:
 - File: `cloudflare/stripe-checkout-worker.js`
 - Toml: `cloudflare/wrangler-stripe-checkout.toml`
 - Endpoints: `POST /api/billing/checkout`, `POST /api/billing/portal`
-- Bindings: SKEPT_AUTH_DB (skept-auth), AUTH_SESSIONS KV (extraneous — remove in next pass)
+- Bindings: SKEPT_AUTH_DB (skept-auth)
 - Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_IDS (JSON string), JWT_SECRET
 
 ### skept-stripe-webhook
