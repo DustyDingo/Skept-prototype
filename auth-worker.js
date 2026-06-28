@@ -93,9 +93,12 @@ function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
 
-function jsonRes(body, status, origin) {
-  const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
-  if (ALLOWED_ORIGINS.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
+function jsonRes(body, status, origin, extraHeaders = {}) {
+  const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extraHeaders };
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
   return new Response(JSON.stringify(body), { status, headers });
 }
 
@@ -107,9 +110,16 @@ function handlePreflight(origin) {
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Max-Age': '86400',
     },
   });
+}
+
+function getCookieValue(request, name) {
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 // Accept session_id from Authorization: Bearer header or JSON body (does not re-read body).
@@ -301,12 +311,19 @@ async function handleVerify(request, env, url) {
     return verifyErrorPage('This sign-in link has already been used. Please request a new one.');
   }
 
+  // Fetch tier so Workers can read it from KV without a D1 round-trip
+  const tierRow = await env.SKEPT_AUTH_DB
+    .prepare('SELECT tier FROM users WHERE id = ?')
+    .bind(tokenRow.user_id)
+    .first();
+  const tier = tierRow?.tier || 'free';
+
   // Create session
   const sessionId = crypto.randomUUID();
   const sessionExpires = ts + SESSION_TTL_S;
   await env.AUTH_SESSIONS.put(
     `session:${sessionId}`,
-    JSON.stringify({ user_id: tokenRow.user_id, created_at: ts, expires_at: sessionExpires }),
+    JSON.stringify({ user_id: tokenRow.user_id, tier, created_at: ts, expires_at: sessionExpires }),
     { expirationTtl: SESSION_TTL_S }
   );
 
@@ -328,9 +345,15 @@ async function handleVerify(request, env, url) {
     .bind(ts, tokenRow.user_id)
     .run();
 
-  // Redirect browser to callback — client reads session_id from query param and stores it
-  const callbackUrl = `https://skept.co/auth/callback?session_id=${encodeURIComponent(sessionId)}`;
-  return Response.redirect(callbackUrl, 302);
+  // Set httpOnly cookie and redirect to the app
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: 'https://skept.co/verify.html',
+      'Set-Cookie': `skept_session=${sessionId}; HttpOnly; Secure; SameSite=Strict; Domain=skept.co; Path=/; Max-Age=604800`,
+      'Cache-Control': 'no-store',
+    },
+  });
 }
 
 function verifyErrorPage(message) {
@@ -399,10 +422,41 @@ async function handleSession(request, env, origin) {
   }, 200, origin);
 }
 
+async function handleMe(request, env, origin) {
+  const sessionId = getCookieValue(request, 'skept_session');
+  if (!sessionId) return jsonRes({ error: 'not_authenticated' }, 401, origin);
+
+  const kvRaw = await env.AUTH_SESSIONS.get(`session:${sessionId}`);
+  if (!kvRaw) return jsonRes({ error: 'session_not_found' }, 401, origin);
+
+  let session;
+  try { session = JSON.parse(kvRaw); }
+  catch { return jsonRes({ error: 'session_not_found' }, 401, origin); }
+
+  if (!session.expires_at || session.expires_at <= Math.floor(Date.now() / 1000)) {
+    return jsonRes({ error: 'session_expired' }, 401, origin);
+  }
+
+  const user = await env.SKEPT_AUTH_DB
+    .prepare('SELECT id, email_hash, tier, display_name FROM users WHERE id = ?')
+    .bind(session.user_id)
+    .first();
+  if (!user) return jsonRes({ error: 'user_not_found' }, 401, origin);
+
+  return jsonRes({ user_id: user.id, email_hash: user.email_hash, tier: user.tier, display_name: user.display_name }, 200, origin);
+}
+
 async function handleLogout(request, env, origin) {
-  const sessionId = await extractSessionId(request);
-  if (sessionId) await env.AUTH_SESSIONS.delete(`session:${sessionId}`);
-  return jsonRes({ ok: true }, 200, origin);
+  // Try cookie first, then Bearer/body session_id
+  const cookieSessionId = getCookieValue(request, 'skept_session');
+  if (cookieSessionId) {
+    await env.AUTH_SESSIONS.delete(`session:${cookieSessionId}`);
+  } else {
+    const sessionId = await extractSessionId(request);
+    if (sessionId) await env.AUTH_SESSIONS.delete(`session:${sessionId}`);
+  }
+  const clearCookie = 'skept_session=; HttpOnly; Secure; SameSite=Strict; Domain=skept.co; Path=/; Max-Age=0';
+  return jsonRes({ ok: true }, 200, origin, { 'Set-Cookie': clearCookie });
 }
 
 async function handleDeleteAccount(request, env, origin) {
@@ -466,6 +520,7 @@ export default {
 
       if (m === 'POST' && p === '/api/auth/request-link')  return await handleRequestLink(request, env, origin);
       if (m === 'GET'  && p === '/api/auth/verify')         return await handleVerify(request, env, url);
+      if (m === 'GET'  && p === '/api/auth/me')             return await handleMe(request, env, origin);
       if (m === 'POST' && p === '/api/auth/session')        return await handleSession(request, env, origin);
       if (m === 'POST' && p === '/api/auth/logout')         return await handleLogout(request, env, origin);
       if (m === 'POST' && p === '/api/auth/delete-account') return await handleDeleteAccount(request, env, origin);

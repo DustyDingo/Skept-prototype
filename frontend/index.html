@@ -3,847 +3,97 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Skept — Prototype</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <title>Skept — Sign in</title>
   <style>
-    :root {
-      --amber:       #DFB87B;
-      --amber-light: #F5E6C8;
-      --amber-pale:  #FAF5EC;
-      --ink:         #1A1A1A;
-      --gray:        #4A4A4A;
-      --soft:        #8A8A8A;
-      --rule:        #E0E0E0;
-      --cream:       #FAF8F5;
-      --green:       #2D7A4F;
-      --green-bg:    #EBF5EF;
-      --red:         #C0392B;
-      --red-bg:      #FDECEA;
-      --amber-bg:    #FEF9EE;
-    }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    :root {
+      --amber: #DFB87B; --amber-light: #F5E6C8; --ink: #1A1A1A;
+      --gray: #4A4A4A; --soft: #8A8A8A; --cream: #FAF8F5; --rule: #E0E0E0;
+    }
     body {
-      font-family: 'Inter', sans-serif;
-      background: var(--cream);
-      color: var(--ink);
-      min-height: 100vh;
+      font-family: Calibri, Arial, sans-serif;
+      background: var(--cream); color: var(--ink);
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 24px;
     }
-
-    /* ── Nav ───────────────────────────────────────────────────────────────── */
-    nav {
-      position: sticky; top: 0; z-index: 100;
-      background: rgba(250,248,245,0.92);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--rule);
-      padding: 0 32px;
-      height: 56px;
-      display: flex; align-items: center; justify-content: space-between;
+    .card {
+      width: 100%; max-width: 400px;
     }
-    .nav-brand {
-      display: flex; align-items: center; gap: 10px;
-      font-family: 'EB Garamond', serif;
-      font-style: italic; font-size: 22px;
-      color: var(--ink); text-decoration: none;
+    .wordmark {
+      font-family: 'Palatino Linotype', Palatino, serif;
+      font-style: italic; font-size: 32px; color: var(--amber);
+      margin-bottom: 8px; display: block;
     }
-    .nav-loupe {
-      width: 28px; height: 28px;
-      border: 2px solid var(--ink);
-      border-radius: 50%;
-      position: relative;
+    .tagline {
+      font-size: 14px; color: var(--soft); margin-bottom: 40px;
     }
-    .nav-loupe::after {
-      content: '';
-      position: absolute; bottom: -7px; right: -7px;
-      width: 10px; height: 2px;
-      background: var(--ink);
-      transform: rotate(45deg);
-      transform-origin: left center;
+    label {
+      display: block; font-size: 13px; font-weight: 600;
+      color: var(--gray); margin-bottom: 8px;
     }
-    .nav-badge {
-      font-family: 'Inter', sans-serif;
-      font-size: 10px; font-weight: 600;
-      letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--amber); font-style: normal;
-      border: 1px solid var(--amber);
-      padding: 2px 7px; border-radius: 3px;
+    input[type="email"] {
+      width: 100%; padding: 12px 14px;
+      border: 1.5px solid var(--rule); border-radius: 6px;
+      font-family: Calibri, Arial, sans-serif; font-size: 15px;
+      color: var(--ink); background: white; outline: none;
+      transition: border-color 0.15s; margin-bottom: 14px;
     }
-
-    /* ── Main layout ────────────────────────────────────────────────────────── */
-    main {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 64px 24px 120px;
-    }
-
-    /* ── Intake ─────────────────────────────────────────────────────────────── */
-    #view-intake { display: block; }
-    #view-analysing { display: none; }
-    #view-verdict { display: none; }
-
-    .intake-eyebrow {
-      font-size: 11px; font-weight: 600;
-      letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--amber); margin-bottom: 24px;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .intake-eyebrow::after {
-      content: ''; flex: 0 0 28px; height: 1px;
-      background: var(--amber); opacity: 0.4;
-    }
-
-    h1 {
-      font-family: 'EB Garamond', serif;
-      font-size: clamp(36px, 5vw, 52px);
-      font-weight: 400; line-height: 1.1;
-      letter-spacing: -0.02em;
-      margin-bottom: 16px;
-    }
-    h1 em { font-style: italic; color: var(--amber); }
-
-    .intake-lead {
-      font-size: 17px; color: var(--gray);
-      line-height: 1.65; font-weight: 300;
-      margin-bottom: 48px; max-width: 520px;
-    }
-
-    /* Tab bar */
-    .input-tabs {
-      display: flex; gap: 0;
-      border-bottom: 1px solid var(--rule);
-      margin-bottom: 28px;
-    }
-    .tab-btn {
-      padding: 10px 20px;
-      font-size: 13px; font-weight: 500;
-      color: var(--soft); background: none;
-      border: none; border-bottom: 2px solid transparent;
-      cursor: pointer; transition: all 0.15s;
-      margin-bottom: -1px;
-    }
-    .tab-btn.active {
-      color: var(--ink);
-      border-bottom-color: var(--amber);
-    }
-    .tab-btn:hover:not(.active) { color: var(--gray); }
-
-    /* URL input */
-    #tab-url, #tab-file { display: none; }
-    #tab-url.active-tab, #tab-file.active-tab { display: block; }
-
-    .url-row {
-      display: flex; gap: 10px;
-    }
-    .url-input {
-      flex: 1;
-      padding: 13px 16px;
-      border: 1.5px solid var(--rule);
-      border-radius: 6px;
-      font-family: 'Inter', sans-serif;
-      font-size: 14px; color: var(--ink);
-      background: white;
-      transition: border-color 0.15s;
-      outline: none;
-    }
-    .url-input:focus { border-color: var(--amber); }
-    .url-input::placeholder { color: var(--soft); }
-
-    .analyse-btn {
-      padding: 13px 28px;
+    input[type="email"]:focus { border-color: var(--amber); }
+    input[type="email"]::placeholder { color: var(--soft); }
+    .submit-btn {
+      width: 100%; padding: 13px;
       background: var(--ink); color: white;
       border: none; border-radius: 6px;
-      font-family: 'Inter', sans-serif;
-      font-size: 14px; font-weight: 500;
-      cursor: pointer; white-space: nowrap;
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 15px; font-weight: 600; cursor: pointer;
       transition: opacity 0.15s;
     }
-    .analyse-btn:hover { opacity: 0.85; }
-    .analyse-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    /* File drop zone */
-    .dropzone {
-      border: 2px dashed var(--rule);
-      border-radius: 8px;
-      padding: 48px 32px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      background: white;
-    }
-    .dropzone:hover, .dropzone.drag-over {
-      border-color: var(--amber);
-      background: var(--amber-pale);
-    }
-    .dropzone input { display: none; }
-    .dropzone-icon {
-      font-size: 32px; margin-bottom: 12px;
-    }
-    .dropzone-label {
-      font-size: 14px; color: var(--gray);
-    }
-    .dropzone-label strong { color: var(--ink); }
-    .dropzone-meta {
-      font-size: 12px; color: var(--soft); margin-top: 6px;
-    }
-    .file-selected {
-      display: flex; align-items: center;
-      gap: 12px; margin-top: 16px;
-      padding: 12px 16px;
-      background: var(--amber-light);
-      border-radius: 6px;
-      font-size: 13px;
-    }
-    .file-selected span { flex: 1; font-weight: 500; }
-
-    /* Platform hints */
-    .platform-chips {
-      display: flex; flex-wrap: wrap; gap: 8px;
-      margin-top: 20px;
-    }
-    .chip {
-      font-size: 11px; font-weight: 500;
-      color: var(--soft);
-      border: 1px solid var(--rule);
-      padding: 4px 10px; border-radius: 20px;
-    }
-
-    /* ── Analysing view ─────────────────────────────────────────────────────── */
-    .analysing-header {
-      margin-bottom: 40px;
-    }
-    .analysing-label {
-      font-family: 'EB Garamond', serif;
-      font-size: 32px; font-weight: 400;
-      margin-bottom: 8px;
-    }
-    .analysing-sub {
-      font-size: 14px; color: var(--soft);
-    }
-
-    .stage-label {
-      font-size: 10px; font-weight: 600;
-      letter-spacing: 0.14em; text-transform: uppercase;
-      color: var(--soft); margin-bottom: 12px;
-    }
-
-    .signal-list { display: flex; flex-direction: column; gap: 10px; }
-
-    .signal-row {
-      display: flex; align-items: center; gap: 14px;
-      padding: 14px 18px;
-      background: white;
-      border: 1px solid var(--rule);
-      border-radius: 8px;
-      transition: all 0.3s;
-    }
-    .signal-row.running {
-      border-color: var(--amber);
-      background: var(--amber-pale);
-    }
-    .signal-row.complete { opacity: 1; }
-    .signal-row.pending { opacity: 0.45; }
-
-    .signal-icon {
-      width: 32px; height: 32px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; font-size: 14px;
-      background: var(--rule); color: var(--soft);
-      transition: all 0.3s;
-    }
-    .signal-row.running .signal-icon {
-      background: var(--amber); color: white;
-      animation: pulse-icon 1.4s ease-in-out infinite;
-    }
-    .signal-row.complete .signal-icon {
-      background: var(--green-bg); color: var(--green);
-    }
-    @keyframes pulse-icon {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.1); opacity: 0.8; }
-    }
-
-    .signal-name {
-      flex: 1; font-size: 14px; font-weight: 500;
-    }
-    .signal-status {
-      font-size: 12px; color: var(--soft);
-    }
-    .signal-row.running .signal-status { color: var(--amber); }
-    .signal-row.complete .signal-status { color: var(--green); }
-
-    .progress-bar {
-      margin-top: 32px;
-      height: 3px; background: var(--rule);
-      border-radius: 2px; overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%; background: var(--amber);
-      border-radius: 2px;
-      transition: width 0.4s ease;
-      width: 0%;
-    }
-
-    /* ── Verdict view ────────────────────────────────────────────────────────── */
-    .verdict-band {
-      padding: 28px 32px;
-      border-radius: 12px;
-      margin-bottom: 32px;
-      display: flex; align-items: center; gap: 20px;
-    }
-    .verdict-band.green {
-      background: var(--green-bg);
-      border: 1.5px solid #2D7A4F40;
-    }
-    .verdict-band.amber {
-      background: var(--amber-bg);
-      border: 1.5px solid #DFB87B60;
-    }
-    .verdict-band.red {
-      background: var(--red-bg);
-      border: 1.5px solid #C0392B40;
-    }
-
-    .verdict-indicator {
-      width: 48px; height: 48px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px;
-    }
-    .green .verdict-indicator { background: var(--green); }
-    .amber .verdict-indicator { background: var(--amber); }
-    .red .verdict-indicator { background: var(--red); }
-
-    .verdict-text h2 {
-      font-family: 'EB Garamond', serif;
-      font-size: 24px; font-weight: 500;
-      margin-bottom: 4px;
-    }
-    .green .verdict-text h2 { color: var(--green); }
-    .amber .verdict-text h2 { color: #8B6914; }
-    .red .verdict-text h2 { color: var(--red); }
-
-    .verdict-text p {
-      font-size: 13px; line-height: 1.6;
-      color: var(--gray);
-    }
-
-    .score-bar-wrap {
-      margin-bottom: 32px;
-    }
-    .score-bar-label {
-      display: flex; justify-content: space-between;
-      font-size: 11px; color: var(--soft);
-      margin-bottom: 8px;
-    }
-    .score-bar {
-      height: 6px; background: var(--rule);
-      border-radius: 3px; overflow: hidden;
-      position: relative;
-    }
-    .score-fill {
-      height: 100%; border-radius: 3px;
-      transition: width 0.6s ease;
-    }
-    .score-fill.green { background: var(--green); }
-    .score-fill.amber { background: var(--amber); }
-    .score-fill.red { background: var(--red); }
-
-    /* Evidence cards */
-    .evidence-section {
-      margin-bottom: 28px;
-    }
-    .evidence-section h3 {
-      font-size: 11px; font-weight: 600;
-      letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--soft); margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--rule);
-    }
-
-    .evidence-card {
-      background: white;
-      border: 1px solid var(--rule);
-      border-radius: 8px;
-      overflow: hidden;
-      margin-bottom: 10px;
-    }
-    .evidence-card-header {
-      display: flex; align-items: center;
-      gap: 12px; padding: 14px 18px;
-      cursor: pointer;
-    }
-    .evidence-card-header:hover { background: var(--cream); }
-    .evidence-card-title {
-      flex: 1; font-size: 14px; font-weight: 500;
-    }
-    .evidence-card-score {
-      font-size: 13px; font-weight: 600;
-    }
-    .evidence-card-score.green { color: var(--green); }
-    .evidence-card-score.amber { color: #8B6914; }
-    .evidence-card-score.red { color: var(--red); }
-
-    .evidence-card-body {
-      padding: 0 18px 18px;
-      border-top: 1px solid var(--rule);
-      display: none;
-    }
-    .evidence-card-body.open { display: block; }
-
-    .evidence-summary {
-      font-size: 13px; line-height: 1.7;
-      color: var(--gray); padding: 14px 0 10px;
-    }
-
-    .signal-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .signal-table td {
-      padding: 7px 0; font-size: 13px;
-      border-bottom: 1px solid var(--rule);
-      vertical-align: top;
-    }
-    .signal-table tr:last-child td { border-bottom: none; }
-    .signal-table .sig-label { color: var(--gray); width: 55%; }
-    .signal-table .sig-value { font-weight: 500; text-align: right; }
-    .sig-flag { color: var(--red); font-size: 11px; }
-
-    /* Disclaimer */
-    .disclaimer {
-      padding: 14px 18px;
-      background: var(--amber-pale);
-      border: 1px solid var(--amber-light);
-      border-radius: 6px;
-      font-size: 12px; line-height: 1.6;
-      color: var(--gray); margin-bottom: 24px;
-    }
-
-    .retry-btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 12px 24px;
-      border: 1.5px solid var(--ink);
-      border-radius: 6px;
-      font-family: 'Inter', sans-serif;
-      font-size: 13px; font-weight: 500;
-      color: var(--ink); background: none;
-      cursor: pointer; text-decoration: none;
-      transition: all 0.15s;
-    }
-    .retry-btn:hover { background: var(--ink); color: white; }
-
-    /* Error */
+    .submit-btn:hover { opacity: 0.85; }
+    .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .error-box {
-      padding: 20px 24px;
-      background: var(--red-bg);
-      border: 1px solid #C0392B30;
-      border-radius: 8px;
-      margin-top: 16px;
-      font-size: 14px; color: var(--red);
+      display: none; margin-top: 14px; padding: 12px 14px;
+      background: #FDECEA; border: 1px solid #C0392B30;
+      border-radius: 6px; font-size: 13px; color: #C0392B;
+    }
+    .confirmation {
+      display: none; text-align: center; padding: 32px 0;
+    }
+    .confirmation h2 {
+      font-size: 20px; margin-bottom: 10px;
+    }
+    .confirmation p {
+      font-size: 14px; color: var(--gray); line-height: 1.6;
+    }
+    .divider {
+      height: 1px; background: var(--rule); margin: 36px 0;
+    }
+    .footer-note {
+      font-size: 12px; color: var(--soft); text-align: center;
+      line-height: 1.6;
     }
   </style>
 </head>
 <body>
+  <div class="card">
+    <span class="wordmark">Skept</span>
+    <p class="tagline">AI-content detection for short-form video.</p>
 
-<nav>
-  <a class="nav-brand" href="#">
-    <div class="nav-loupe"></div>
-    Skept
-  </a>
-  <span class="nav-badge">Prototype v0.1</span>
-</nav>
-
-<main>
-
-  <!-- ═══════════════════════════════════════════
-       VIEW 1: INTAKE
-       ═══════════════════════════════════════════ -->
-  <div id="view-intake">
-    <div class="intake-eyebrow">A second look, before the share</div>
-    <h1><em>Look closer</em><br>at every clip.</h1>
-    <p class="intake-lead">
-      Paste a link or upload a video. Skept analyses metadata,
-      container forensics, and frame-level signals to return an
-      evidence-backed verdict.
-    </p>
-
-    <div class="input-tabs">
-      <button class="tab-btn active" onclick="switchTab('url')">Paste URL</button>
-      <button class="tab-btn" onclick="switchTab('file')">Upload file</button>
+    <div id="signin-form">
+      <label for="email">Email address</label>
+      <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
+      <button class="submit-btn" id="submit-btn" type="submit">Send magic link</button>
+      <div class="error-box" id="error-box"></div>
     </div>
 
-    <div id="tab-url" class="active-tab">
-      <div class="url-row">
-        <input
-          class="url-input"
-          id="url-input"
-          type="url"
-          placeholder="https://www.tiktok.com/@… or YouTube, Instagram, X…"
-          autocomplete="off"
-        >
-        <button class="analyse-btn" id="url-btn" onclick="submitUrl()">Analyse</button>
-      </div>
+    <div class="confirmation" id="confirmation">
+      <h2>Check your inbox</h2>
+      <p>We've sent a sign-in link to your email.<br>It expires in 15 minutes.</p>
     </div>
 
-    <div id="tab-file">
-      <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
-        <input type="file" id="file-input" accept="video/*" onchange="fileSelected(this)">
-        <div class="dropzone-icon">🎬</div>
-        <div class="dropzone-label">
-          <strong>Drop a video file here</strong> or click to browse
-        </div>
-        <div class="dropzone-meta">MP4, MOV, WebM · up to 500 MB</div>
-      </div>
-      <div id="file-info" style="display:none">
-        <div class="file-selected">
-          <span>📄</span>
-          <span id="file-name"></span>
-          <button class="analyse-btn" id="file-btn" onclick="submitFile()">Analyse</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="platform-chips">
-      <span class="chip">TikTok</span>
-      <span class="chip">Instagram</span>
-      <span class="chip">YouTube Shorts</span>
-      <span class="chip">X / Twitter</span>
-      <span class="chip">Bluesky</span>
-      <span class="chip">Facebook</span>
-      <span class="chip">Discord CDN</span>
-      <span class="chip">Direct file</span>
-    </div>
-
-    <div id="intake-error" class="error-box" style="display:none"></div>
+    <div class="divider"></div>
+    <p class="footer-note">No password. Just a one-time link sent to your inbox.</p>
   </div>
 
-
-  <!-- ═══════════════════════════════════════════
-       VIEW 2: ANALYSING
-       ═══════════════════════════════════════════ -->
-  <div id="view-analysing">
-    <div class="analysing-header">
-      <div class="analysing-label">Analysing clip…</div>
-      <div class="analysing-sub" id="analysing-input"></div>
-    </div>
-
-    <div class="stage-label">Stage 1 — Cheap signals (no GPU)</div>
-    <div class="signal-list">
-      <div class="signal-row pending" id="sig-ingest">
-        <div class="signal-icon">⬇</div>
-        <div class="signal-name">Ingestion &amp; normalisation</div>
-        <div class="signal-status">Waiting…</div>
-      </div>
-      <div class="signal-row pending" id="sig-metadata">
-        <div class="signal-icon">🗂</div>
-        <div class="signal-name">Metadata &amp; container forensics</div>
-        <div class="signal-status">Waiting…</div>
-      </div>
-    </div>
-
-    <br>
-    <div class="stage-label" style="margin-top:20px">Stage 2 — GPU ensemble</div>
-    <div class="signal-list">
-      <div class="signal-row pending" id="sig-deepfake">
-        <div class="signal-icon">🧠</div>
-        <div class="signal-name">Frame-level deepfake detection</div>
-        <div class="signal-status">Waiting for Stage 1…</div>
-      </div>
-    </div>
-
-    <div class="progress-bar" style="margin-top:32px">
-      <div class="progress-fill" id="progress-fill"></div>
-    </div>
-  </div>
-
-
-  <!-- ═══════════════════════════════════════════
-       VIEW 3: VERDICT
-       ═══════════════════════════════════════════ -->
-  <div id="view-verdict">
-
-    <div id="verdict-band" class="verdict-band amber">
-      <div class="verdict-indicator">◑</div>
-      <div class="verdict-text">
-        <h2 id="verdict-label">Inconclusive</h2>
-        <p id="verdict-desc"></p>
-      </div>
-    </div>
-
-    <div class="score-bar-wrap">
-      <div class="score-bar-label">
-        <span>Authentic</span>
-        <span id="score-pct"></span>
-        <span>Manipulated</span>
-      </div>
-      <div class="score-bar">
-        <div class="score-fill amber" id="score-fill"></div>
-      </div>
-    </div>
-
-    <div id="evidence-cards"></div>
-
-    <div id="verdict-disclaimer" class="disclaimer"></div>
-
-    <button class="retry-btn" onclick="reset()">← Analyse another clip</button>
-  </div>
-
-</main>
-
-<script>
-  /* ══════════════════════════════════════════════════════════
-     CONFIG — update API_BASE if running on a different port
-     ══════════════════════════════════════════════════════════ */
-  const API_BASE = window.SKEPT_API || 'http://localhost:8000';
-
-  /* ── Tab switching ──────────────────────────────────────── */
-  function switchTab(name) {
-    document.querySelectorAll('.tab-btn').forEach((b, i) => {
-      b.classList.toggle('active', (name === 'url' && i === 0) || (name === 'file' && i === 1));
-    });
-    document.getElementById('tab-url').classList.toggle('active-tab', name === 'url');
-    document.getElementById('tab-file').classList.toggle('active-tab', name === 'file');
-  }
-
-  /* ── File selection ─────────────────────────────────────── */
-  let selectedFile = null;
-
-  function fileSelected(input) {
-    selectedFile = input.files[0];
-    if (!selectedFile) return;
-    document.getElementById('file-name').textContent = selectedFile.name;
-    document.getElementById('file-info').style.display = 'block';
-  }
-
-  // Drag-and-drop
-  const dz = document.getElementById('dropzone');
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault(); dz.classList.remove('drag-over');
-    const f = e.dataTransfer.files[0];
-    if (f && f.type.startsWith('video/')) {
-      selectedFile = f;
-      document.getElementById('file-name').textContent = f.name;
-      document.getElementById('file-info').style.display = 'block';
-    }
-  });
-
-  /* ── Submit ─────────────────────────────────────────────── */
-  async function submitUrl() {
-    const url = document.getElementById('url-input').value.trim();
-    if (!url) return;
-    clearError();
-    const fd = new FormData();
-    fd.append('url', url);
-    await startJob(fd, url);
-  }
-
-  async function submitFile() {
-    if (!selectedFile) return;
-    clearError();
-    const fd = new FormData();
-    fd.append('file', selectedFile);
-    await startJob(fd, selectedFile.name);
-  }
-
-  async function startJob(formData, label) {
-    try {
-      const resp = await fetch(`${API_BASE}/api/analyse`, { method: 'POST', body: formData });
-      if (!resp.ok) throw new Error(`Server error ${resp.status}`);
-      const { job_id } = await resp.json();
-      showAnalysing(label);
-      pollJob(job_id);
-    } catch (e) {
-      showError(e.message);
-    }
-  }
-
-  /* ── Polling ────────────────────────────────────────────── */
-  let pollTimer = null;
-
-  async function pollJob(jobId) {
-    try {
-      const resp = await fetch(`${API_BASE}/api/status/${jobId}`);
-      const job = await resp.json();
-      updateAnalysingUI(job);
-
-      if (job.state === 'complete') {
-        showVerdict(job);
-      } else if (job.state === 'error') {
-        showError(job.error || 'Analysis failed.');
-        showIntake();
-      } else {
-        pollTimer = setTimeout(() => pollJob(jobId), 2000);
-      }
-    } catch (e) {
-      pollTimer = setTimeout(() => pollJob(jobId), 3000);
-    }
-  }
-
-  /* ── Analysing UI updates ───────────────────────────────── */
-  function updateAnalysingUI(job) {
-    const state = job.state;
-    const analysers = job.analysers || {};
-
-    // Ingestion
-    setSigState('sig-ingest',
-      ['pending','pending'].includes(state) ? 'pending' :
-      state === 'ingesting' ? 'running' : 'complete',
-      state === 'ingesting' ? 'Downloading…' :
-      state === 'pending' ? 'Waiting…' : 'Done'
-    );
-
-    // Metadata
-    const meta = analysers.metadata || {};
-    setSigState('sig-metadata',
-      meta.status === 'complete' ? 'complete' :
-      meta.status === 'running' ? 'running' :
-      state === 'stage1' ? 'running' : 'pending',
-      meta.status === 'complete' ? 'Complete' :
-      (meta.status === 'running' || state === 'stage1') ? 'Running…' : 'Waiting…'
-    );
-
-    // Deepfake
-    const df = analysers.deepfake || {};
-    setSigState('sig-deepfake',
-      df.status === 'complete' || df.status === 'skipped' ? 'complete' :
-      df.status === 'running' ? 'running' :
-      state === 'stage2' ? 'running' : 'pending',
-      df.status === 'complete' ? 'Complete' :
-      df.status === 'skipped' ? 'Skipped (no token)' :
-      (df.status === 'running' || state === 'stage2') ? 'Analysing frames…' : 'Waiting for Stage 1…'
-    );
-
-    // Progress bar
-    const steps = { pending: 0, ingesting: 15, stage1: 40, stage2: 75, complete: 100 };
-    document.getElementById('progress-fill').style.width = (steps[state] || 0) + '%';
-  }
-
-  function setSigState(id, cls, label) {
-    const el = document.getElementById(id);
-    el.className = `signal-row ${cls}`;
-    el.querySelector('.signal-status').textContent = label;
-  }
-
-  /* ── Views ──────────────────────────────────────────────── */
-  function showAnalysing(label) {
-    hide('view-intake'); hide('view-verdict'); show('view-analysing');
-    document.getElementById('analysing-input').textContent = label;
-    setSigState('sig-ingest', 'pending', 'Waiting…');
-    setSigState('sig-metadata', 'pending', 'Waiting…');
-    setSigState('sig-deepfake', 'pending', 'Waiting for Stage 1…');
-    document.getElementById('progress-fill').style.width = '0%';
-  }
-
-  function showIntake() {
-    hide('view-analysing'); hide('view-verdict'); show('view-intake');
-  }
-
-  function reset() {
-    if (pollTimer) clearTimeout(pollTimer);
-    showIntake();
-    document.getElementById('url-input').value = '';
-    selectedFile = null;
-    document.getElementById('file-info').style.display = 'none';
-  }
-
-  function show(id) { document.getElementById(id).style.display = 'block'; }
-  function hide(id) { document.getElementById(id).style.display = 'none'; }
-
-  /* ── Verdict rendering ──────────────────────────────────── */
-  function showVerdict(job) {
-    hide('view-analysing'); hide('view-intake'); show('view-verdict');
-    const v = job.verdict;
-
-    // Band
-    const band = document.getElementById('verdict-band');
-    band.className = `verdict-band ${v.band}`;
-    const icons = { green: '✓', amber: '◑', red: '✕' };
-    band.querySelector('.verdict-indicator').textContent = icons[v.band] || '◑';
-    document.getElementById('verdict-label').textContent = v.label;
-    document.getElementById('verdict-desc').textContent = v.description;
-
-    // Score bar
-    const pct = Math.round(v.score * 100);
-    document.getElementById('score-pct').textContent = `${pct}% synthetic probability`;
-    const fill = document.getElementById('score-fill');
-    fill.style.width = pct + '%';
-    fill.className = `score-fill ${v.band}`;
-
-    // Evidence cards
-    const cards = document.getElementById('evidence-cards');
-    cards.innerHTML = '';
-
-    const analysers = job.analysers;
-    const defs = [
-      { key: 'metadata', title: 'Metadata & Container Forensics', icon: '🗂' },
-      { key: 'deepfake', title: 'Frame-Level Deepfake Detection', icon: '🧠' },
-    ];
-
-    const cardSection = document.createElement('div');
-    cardSection.className = 'evidence-section';
-    cardSection.innerHTML = '<h3>Evidence</h3>';
-
-    defs.forEach(({ key, title, icon }) => {
-      const a = analysers[key];
-      if (!a) return;
-      const scoreBand = a.score < 0.3 ? 'green' : a.score < 0.6 ? 'amber' : 'red';
-      const scoreLabel = a.status === 'skipped' ? 'Skipped' :
-        a.status === 'error' ? 'Error' :
-        `${Math.round((a.score || 0.5) * 100)}%`;
-
-      const card = document.createElement('div');
-      card.className = 'evidence-card';
-      card.innerHTML = `
-        <div class="evidence-card-header" onclick="toggleCard(this)">
-          <span>${icon}</span>
-          <span class="evidence-card-title">${title}</span>
-          <span class="evidence-card-score ${scoreBand}">${scoreLabel}</span>
-          <span style="color:var(--soft);font-size:12px">▾</span>
-        </div>
-        <div class="evidence-card-body">
-          <div class="evidence-summary">${a.summary || ''}</div>
-          ${renderSignals(a.signals || [])}
-        </div>
-      `;
-      cardSection.appendChild(card);
-    });
-
-    cards.appendChild(cardSection);
-
-    document.getElementById('verdict-disclaimer').textContent = v.disclaimer;
-  }
-
-  function renderSignals(signals) {
-    if (!signals.length) return '';
-    const rows = signals.map(s => {
-      const flag = s.suspicious ? ' <span class="sig-flag">⚑</span>' : '';
-      const val = typeof s.value === 'boolean' ? (s.value ? 'Yes' : 'No') : s.value;
-      return `<tr>
-        <td class="sig-label">${s.label}${flag}</td>
-        <td class="sig-value">${val}</td>
-      </tr>`;
-    }).join('');
-    return `<table class="signal-table"><tbody>${rows}</tbody></table>`;
-  }
-
-  function toggleCard(header) {
-    const body = header.nextElementSibling;
-    body.classList.toggle('open');
-  }
-
-  /* ── Error handling ─────────────────────────────────────── */
-  function showError(msg) {
-    const el = document.getElementById('intake-error');
-    el.textContent = `Error: ${msg}`;
-    el.style.display = 'block';
-    showIntake();
-  }
-
-  function clearError() {
-    document.getElementById('intake-error').style.display = 'none';
-  }
-</script>
+  <script type="module" src="/src/pages/signin.js"></script>
 </body>
 </html>

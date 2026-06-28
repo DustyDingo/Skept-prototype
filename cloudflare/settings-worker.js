@@ -7,12 +7,24 @@ function json(data, status = 200) {
   });
 }
 
-async function authenticate(request, AUTH_SESSIONS) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'missing_token', status: 401 };
+function getCookieValue(request, name) {
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
-  const raw = await AUTH_SESSIONS.get(token);
+async function authenticate(request, AUTH_SESSIONS) {
+  let kvKey;
+  const authHeader = request.headers.get('Authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    kvKey = `session:${authHeader.slice(7).trim()}`;
+  } else {
+    const cookieId = getCookieValue(request, 'skept_session');
+    if (cookieId) kvKey = `session:${cookieId}`;
+  }
+  if (!kvKey) return { error: 'missing_token', status: 401 };
+
+  const raw = await AUTH_SESSIONS.get(kvKey);
   if (!raw) return { error: 'invalid_token', status: 401 };
 
   let session;
@@ -22,11 +34,11 @@ async function authenticate(request, AUTH_SESSIONS) {
     return { error: 'invalid_token', status: 401 };
   }
 
-  if (!session.expires_at || session.expires_at <= Date.now()) {
+  if (!session.expires_at || session.expires_at <= Math.floor(Date.now() / 1000)) {
     return { error: 'token_expired', status: 401 };
   }
 
-  return { session, token };
+  return { session, token: kvKey };
 }
 
 function computeInitials(displayName) {
