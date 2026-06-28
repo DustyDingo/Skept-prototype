@@ -7,11 +7,6 @@ binding = "SKEPT_AUTH_DB"
 database_name = "skept-auth"
 database_id = "b81343be-4703-4d26-959e-46781843d563"
 
-[[kv_namespaces]]
-binding = "AUTH_SESSIONS"
-id = "acb86bfb713e453ab616053bdbc785f8"
-preview_id = "4367d8434b94480f9e38e6989d1c01ff"
-
 # [[routes]] — uncomment when wiring skept.co/api/billing/*
 # Endpoints: POST /api/billing/checkout  POST /api/billing/portal
 # pattern = "skept.co/api/billing/*"

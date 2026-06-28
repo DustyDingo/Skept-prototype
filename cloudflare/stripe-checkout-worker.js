@@ -5,19 +5,38 @@ function json(data, status = 200) {
   });
 }
 
-// verifyJWT — KV-backed session validation per §3.50 spec naming.
-// Swap body for HS256 JWT verification once auth-worker.js ships JWT tokens.
-async function verifyJWT(request, AUTH_SESSIONS) {
+function b64url(s) {
+  return s.replace(/-/g, '+').replace(/_/g, '/');
+}
+
+async function verifyJWT(request, jwtSecret) {
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return { error: 'missing_token', status: 401 };
 
-  const raw = await AUTH_SESSIONS.get(token);
-  if (!raw) return { error: 'invalid_token', status: 401 };
+  const parts = token.split('.');
+  if (parts.length !== 3) return { error: 'invalid_token', status: 401 };
+
+  const [header, payload, sig] = parts;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(jwtSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+  const sigBytes = Uint8Array.from(atob(b64url(sig)), c => c.charCodeAt(0));
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    sigBytes,
+    new TextEncoder().encode(`${header}.${payload}`)
+  );
+  if (!valid) return { error: 'invalid_token', status: 401 };
 
   let session;
   try {
-    session = JSON.parse(raw);
+    session = JSON.parse(atob(b64url(payload)));
   } catch {
     return { error: 'invalid_token', status: 401 };
   }
@@ -52,7 +71,7 @@ export default {
       return json({ error: 'not_found' }, 404);
     }
 
-    const authResult = await verifyJWT(request, env.AUTH_SESSIONS);
+    const authResult = await verifyJWT(request, env.JWT_SECRET);
     if (authResult.error) {
       return json({ error: authResult.error }, authResult.status);
     }
