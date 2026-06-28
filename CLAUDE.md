@@ -154,6 +154,52 @@ Stripe MCP active. Secret key set manually in `.claude/settings.json` — never 
 
 ---
 
+## Billing Workers (§3.50 step 6 — deployed 29 Jun 2026)
+
+Three billing Workers are live on the Cloudflare production stack:
+
+### skept-stripe-checkout
+- File: `cloudflare/stripe-checkout-worker.js`
+- Toml: `cloudflare/wrangler-stripe-checkout.toml`
+- Endpoints: `POST /api/billing/checkout`, `POST /api/billing/portal`
+- Bindings: SKEPT_AUTH_DB (skept-auth), AUTH_SESSIONS KV (extraneous — remove in next pass)
+- Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_IDS (JSON string), JWT_SECRET
+
+### skept-stripe-webhook
+- File: `cloudflare/stripe-webhook-worker.js`
+- Toml: `cloudflare/wrangler-stripe-webhook.toml`
+- Endpoint: `POST /webhook`
+- Events handled: checkout.session.completed, customer.subscription.updated/deleted, invoice.payment_succeeded/failed
+- Bindings: SKEPT_AUTH_DB (skept-auth), SKEPT_ANALYSIS_DB (skept-analysis)
+- Secrets: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_IDS
+
+### skept-revenuecat-webhook
+- File: `cloudflare/revenuecat-webhook-worker.js`
+- Toml: `cloudflare/wrangler-revenuecat-webhook.toml`
+- Endpoint: `POST /webhook`
+- Events handled: INITIAL_PURCHASE, RENEWAL, NON_SUBSCRIPTION_PURCHASE, CANCELLATION, EXPIRATION
+- Signature verification: HMAC-SHA256 via SubtleCrypto, header X-RevenueCat-Webhook-Signature
+- Bindings: SKEPT_AUTH_DB (skept-auth), SKEPT_ANALYSIS_DB (skept-analysis)
+- Secrets: RC_HMAC_SECRET
+
+### D1 schema state (post-migration)
+- `skept-auth / users`: tier CHECK includes 'lite'; stripe_customer_id column present
+- `skept-analysis / quota_usage`: quota_limit (default 5), topup_credits (default 0), topup_expires_at added
+- `skept-analysis / analysis_history`: tier_at_creation CHECK includes 'lite'
+
+### Tier → quota_limit mapping
+free=5, lite=10, plus=20, pro=40, max=60
+
+### RevenueCat entitlement identifiers (note: contain spaces)
+'Skept Lite' → 'lite', 'Skept Plus' → 'plus', 'Skept Pro' → 'pro', 'Skept Max' → 'max'
+
+### Secret rotation policy
+All billing secrets must be rotated if exposed. Reprovision via:
+  npx wrangler@latest secret put <SECRET_NAME> --config cloudflare/<toml-file>
+Never hardcode secrets in source files or commit them to the repo.
+
+---
+
 ## iOS Mobile Build
 
 **Status:** Not started — pending Mac acquisition (current critical path blocker).
