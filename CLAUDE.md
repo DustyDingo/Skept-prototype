@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 27 Jun 2026**
+**Last updated: 29 Jun 2026**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
