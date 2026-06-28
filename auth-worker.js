@@ -279,7 +279,10 @@ async function handleRequestLink(request, env, origin) {
   });
 
   if (!resendRes.ok) {
-    console.error('Resend error', resendRes.status, await resendRes.text());
+    let resendBody;
+    try { resendBody = JSON.stringify(await resendRes.json()); }
+    catch { resendBody = await resendRes.text(); }
+    console.error('Resend error:', resendRes.status, resendBody);
     return jsonRes({ error: 'internal_error' }, 500, origin);
   }
 
