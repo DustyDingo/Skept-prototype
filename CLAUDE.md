@@ -154,6 +154,39 @@ Stripe MCP active. Secret key set manually in `.claude/settings.json` — never 
 
 ---
 
+## iOS Mobile Build
+
+**Status:** Not started — pending Mac acquisition (current critical path blocker).
+
+**Architecture:** React Native app (thin client) + native iOS Share Extension (Swift, separate Xcode build target). The app calls existing Cloudflare Workers — no new backend work required for Phase 1.
+
+**Components:**
+- React Native app shell — verify, history, settings, account screens
+- Native iOS Share Extension (Swift) — primary entry point; separate Xcode target with its own bundle ID, entitlements, and provisioning profile; shares data with main app via App Group
+- Universal Links — routes skept.co magic link taps into the app (not a browser); requires Associated Domains entitlement + `apple-app-site-association` file on skept.co
+- SecureStore for session tokens (keychain-backed — not AsyncStorage)
+- RevenueCat IAP → subscription status flows back via webhook → Worker → `users.tier`
+
+**Cloudflare Workers the app talks to (all already live):**
+- Auth: skept-auth.c-doust85.workers.dev
+- Verify: verify Worker
+- History: history Worker
+- Settings: skept-settings.c-doust85.workers.dev
+
+**Tier enforcement:** single codebase, no per-tier app variants. `tier-config.js` gates all responses server-side. UI renders conditionally based on API response.
+
+**Beta cohort:** up to ~20 testers via manual D1 inserts on `tier='free'` in skept-auth. No billing required for TestFlight.
+
+**Prerequisites before starting:**
+- Mac (MacBook Air M3 16GB recommended)
+- Apple Developer account ($99/yr)
+- Xcode installed and configured
+- RevenueCat products and entitlements created (pending §3.50 Step 6)
+
+**Do not build the Share Extension before Universal Links config is in place** — magic link deep-link must work before share-sheet auth can be tested end-to-end.
+
+---
+
 ## Stage 6 billing Workers
 
 Three Workers deployed separately. Deploy commands:
