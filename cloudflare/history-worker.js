@@ -56,8 +56,15 @@ export default {
       const { user_id: userId, tier } = session;
       const tierConfig = getTier(tier);
 
-      // GET /api/history
-      if (method === 'GET' && pathname === '/api/history') {
+      // GET /api/history  or  GET /api/history/list
+      if (method === 'GET' && (pathname === '/api/history' || pathname === '/api/history/list')) {
+        const TIER_QUOTA = { free: 5, lite: 10, plus: 20, pro: 40, max: 60 };
+        const quotaRow = await env.SKEPT_ANALYSIS_DB.prepare(
+          'SELECT quota_used, quota_limit FROM quota_usage WHERE user_id = ?'
+        ).bind(userId).first();
+        const quota_used = quotaRow?.quota_used ?? 0;
+        const quota_limit = quotaRow?.quota_limit ?? (TIER_QUOTA[tier] ?? 5);
+
         const { results } = await env.SKEPT_ANALYSIS_DB.prepare(`
           SELECT id, verdict_state, score, platform, clip_url, thumbnail_r2_key,
                  strongest_signal, run_depth, tier_at_creation, created_at,
@@ -91,7 +98,7 @@ export default {
           return entry;
         });
 
-        return json({ entries });
+        return json({ quota_used, quota_limit, entries });
       }
 
       // DELETE /api/history/:id
