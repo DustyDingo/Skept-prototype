@@ -104,7 +104,9 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 ---
 
-## Open checklist items (as of 25 Jun 2026)
+## Open checklist items (as of 29 Jun 2026)
+
+**Current baselines:** Project Brief v0.24 (29 Jun 2026) · Engineers Brief v0.21 (29 Jun 2026)
 
 | Item | Description |
 |---|---|
