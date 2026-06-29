@@ -345,7 +345,7 @@ function renderDashboard() {
   <title>Skept — Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sorts+Mill+Goudy:ital,wght@0,400;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sorts+Mill+Goudy:ital,wght@0,400;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -366,18 +366,83 @@ function renderDashboard() {
     body { font-family: var(--ui); background: var(--bg); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
 
     /* NAV */
-    .admin-nav {
+    .skept-nav {
       position: sticky; top: 0; z-index: 200;
-      height: 52px; background: rgba(250,248,243,0.95);
+      height: 56px; background: rgba(250,248,243,0.92);
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--rule);
-      display: flex; align-items: center; padding: 0 20px; gap: 12px;
+      display: flex; align-items: center; padding: 0 24px; gap: 0;
     }
-    .nav-wordmark { font-family: var(--goudy); font-style: italic; font-size: 20px; color: var(--ink); }
-    .nav-tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-softer); background: var(--rule); padding: 3px 7px; border-radius: 4px; }
+    .nav-logo {
+      display: flex; align-items: center; gap: 9px;
+      text-decoration: none; color: var(--ink); flex-shrink: 0;
+    }
+    .nav-logo svg { display: block; }
+    .nav-wordmark {
+      font-family: var(--goudy); font-style: italic; font-size: 21px;
+      line-height: 1; color: var(--ink); letter-spacing: -0.01em;
+    }
     .nav-spacer { flex: 1; }
-    .nav-back { font-size: 13px; color: var(--ink-soft); text-decoration: none; }
-    .nav-back:hover { color: var(--ink); }
+    .nav-links { display: flex; align-items: center; gap: 4px; }
+    .nav-link {
+      font-size: 13.5px; font-weight: 400; color: var(--ink-soft);
+      text-decoration: none; padding: 6px 12px; border-radius: 5px;
+      transition: color 0.15s, background 0.15s; white-space: nowrap;
+      cursor: pointer; background: none; border: none;
+      font-family: var(--ui); line-height: 1;
+    }
+    .nav-link:hover { color: var(--ink); background: rgba(0,0,0,0.04); }
+    .nav-link.active { color: var(--amber); font-weight: 500; }
+    .nav-link--signin {
+      color: var(--ink); font-weight: 500;
+      border: 1px solid var(--rule); background: var(--card);
+    }
+    .nav-link--signin:hover { border-color: rgba(184,116,0,0.25); background: var(--card); color: var(--ink); }
+    .nav-auth   { display: none; }
+    .nav-unauth { display: none; }
+    body[data-auth="true"]  .nav-auth   { display: flex; align-items: center; gap: 4px; }
+    body[data-auth="false"] .nav-unauth { display: flex; align-items: center; gap: 4px; }
+    .nav-account { position: relative; }
+    .nav-account-btn {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 13.5px; font-weight: 400; color: var(--ink-soft);
+      padding: 6px 12px; border-radius: 5px; border: none; background: none;
+      font-family: var(--ui); line-height: 1; cursor: pointer;
+      transition: color 0.15s, background 0.15s; white-space: nowrap;
+    }
+    .nav-account-btn:hover { color: var(--ink); background: rgba(0,0,0,0.04); }
+    .nav-account-btn[aria-expanded="true"] { color: var(--ink); background: rgba(0,0,0,0.04); }
+    .nav-account-btn svg { transition: transform 0.18s ease; color: var(--ink-softer); }
+    .nav-account-btn[aria-expanded="true"] svg { transform: rotate(180deg); color: var(--ink-soft); }
+    .nav-dropdown {
+      position: absolute; top: calc(100% + 8px); right: 0; min-width: 148px;
+      background: var(--card); border: 1px solid var(--rule); border-radius: 7px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+      overflow: hidden; opacity: 0;
+      transform: translateY(-6px) scale(0.98); transform-origin: top right;
+      pointer-events: none; transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+    .nav-dropdown.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+    .nav-dropdown-item {
+      display: flex; align-items: center; gap: 9px; width: 100%;
+      padding: 10px 14px; font-family: var(--ui); font-size: 13.5px;
+      font-weight: 400; color: var(--ink-soft); background: none; border: none;
+      text-decoration: none; cursor: pointer; text-align: left;
+      transition: background 0.12s, color 0.12s; white-space: nowrap;
+    }
+    .nav-dropdown-item:hover { background: var(--bg); color: var(--ink); }
+    .nav-dropdown-item svg { color: var(--ink-softer); flex-shrink: 0; }
+    .nav-dropdown-item:hover svg { color: var(--ink-soft); }
+    .nav-dropdown-divider { height: 1px; background: #f0ece2; margin: 2px 0; }
+    .nav-dropdown-item--signout:hover { color: #a83a2a; background: rgba(168,58,42,0.05); }
+    .nav-dropdown-item--signout:hover svg { color: #a83a2a; }
+    .nav-admin-badge {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+      color: rgba(26,26,26,0.4); background: rgba(26,26,26,0.06);
+      border: 1px solid rgba(26,26,26,0.1); padding: 2px 7px; border-radius: 3px; margin-left: 6px;
+    }
+    .nav-link--back { color: var(--ink-softer); font-size: 12.5px; margin-right: 8px; }
+    .nav-link--back:hover { color: var(--ink-soft); background: rgba(0,0,0,0.03); }
 
     /* LAYOUT */
     .admin-body { display: flex; flex: 1; }
@@ -385,7 +450,7 @@ function renderDashboard() {
       width: var(--sidebar-w); flex-shrink: 0;
       border-right: 1px solid var(--rule);
       padding: 16px 12px;
-      position: sticky; top: 52px; height: calc(100vh - 52px); overflow-y: auto;
+      position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto;
     }
     .sidebar-section { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-softer); padding: 4px 8px 8px; margin-top: 12px; }
     .sidebar-section:first-child { margin-top: 0; }
@@ -518,16 +583,83 @@ function renderDashboard() {
       .sidebar { display: none; }
       .admin-main { padding: 20px 16px; }
     }
+
+    /* FOOTER */
+    .skept-footer {
+      border-top: 1px solid var(--rule); padding: 20px 24px;
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink-softer); }
+    .footer-logo svg { display: block; color: var(--ink-softer); }
+    .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink-softer); line-height: 1; letter-spacing: -0.01em; }
+    .footer-copy { font-size: 12px; color: var(--ink-softer); letter-spacing: 0.01em; }
   </style>
 </head>
-<body>
+<body data-auth="true">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="skept-mark" viewBox="0 0 100 100">
+      <rect x="29.7" y="64.3" width="30" height="12" rx="6"
+            transform="rotate(135, 29.7, 70.3)" fill="currentColor"/>
+      <circle cx="58" cy="42" r="40" fill="currentColor"/>
+      <circle cx="58" cy="42" r="35" fill="#2a2a2a"/>
+      <text x="57" y="62" font-family="'Sorts Mill Goudy', serif"
+            font-style="italic" font-size="62" text-anchor="middle"
+            fill="#faf8f3">S</text>
+    </symbol>
+  </defs>
+</svg>
 
 <!-- NAV -->
-<nav class="admin-nav">
-  <span class="nav-wordmark">Skept</span>
-  <span class="nav-tag">Admin</span>
+<nav class="skept-nav" aria-label="Main navigation">
+  <a class="nav-logo" href="/">
+    <svg width="26" height="26" aria-hidden="true"><use href="#skept-mark"/></svg>
+    <span class="nav-wordmark">Skept</span>
+    <span class="nav-admin-badge">Admin</span>
+  </a>
   <div class="nav-spacer"></div>
-  <a class="nav-back" href="/verify">← Back to app</a>
+
+  <div class="nav-links nav-auth">
+    <a class="nav-link" href="/how-it-works">How it works</a>
+    <a class="nav-link" href="/verify">Check a video</a>
+    <a class="nav-link" href="/history">History</a>
+    <a class="nav-link nav-link--back" href="/verify">← Back to app</a>
+    <div class="nav-account">
+      <button class="nav-account-btn" aria-haspopup="true" aria-expanded="false"
+              aria-controls="account-dropdown" id="account-btn">
+        Account
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+          <path d="M2 4l3.5 3.5L9 4" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="nav-dropdown" id="account-dropdown" role="menu" aria-labelledby="account-btn">
+        <a class="nav-dropdown-item" href="/settings" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <circle cx="7" cy="7" r="2.2" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M7 1v1.2M7 11.8V13M1 7h1.2M11.8 7H13M2.75 2.75l.85.85M10.4 10.4l.85.85M11.25 2.75l-.85.85M3.6 10.4l-.85.85"
+                  stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          Settings
+        </a>
+        <div class="nav-dropdown-divider" role="separator"></div>
+        <button class="nav-dropdown-item nav-dropdown-item--signout" role="menuitem" id="signout-btn">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M5.5 2H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M9.5 9.5L12 7l-2.5-2.5M12 7H5.5" stroke="currentColor" stroke-width="1.3"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Sign out
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-links nav-unauth">
+    <a class="nav-link" href="/how-it-works">How it works</a>
+    <a class="nav-link nav-link--signin" href="/signin">Sign in</a>
+  </div>
 </nav>
 
 <div class="admin-body">
@@ -1150,7 +1282,44 @@ document.addEventListener('DOMContentLoaded', () => {
   viewLoaded['overview'] = true;
   loadOverview();
 });
+
+// ── Account dropdown ──────────────────────────────────────────────────────────
+const _accountBtn = document.getElementById('account-btn');
+const _dropdown   = document.getElementById('account-dropdown');
+
+function _closeDropdown() {
+  _accountBtn.setAttribute('aria-expanded', 'false');
+  _dropdown.classList.remove('open');
+}
+function _openDropdown() {
+  _accountBtn.setAttribute('aria-expanded', 'true');
+  _dropdown.classList.add('open');
+}
+
+_accountBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  _accountBtn.getAttribute('aria-expanded') === 'true' ? _closeDropdown() : _openDropdown();
+});
+
+document.addEventListener('click', () => _closeDropdown());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') _closeDropdown(); });
+_dropdown.addEventListener('click', (e) => e.stopPropagation());
+
+document.getElementById('signout-btn').addEventListener('click', async () => {
+  _closeDropdown();
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  window.location.href = '/';
+});
 </script>
+
+<footer class="skept-footer">
+  <a class="footer-logo" href="/">
+    <svg width="20" height="20" aria-hidden="true"><use href="#skept-mark"/></svg>
+    <span class="footer-wordmark">Skept</span>
+  </a>
+  <span class="footer-copy">© 2026 Skept</span>
+</footer>
+
 </body>
 </html>`;
 }
@@ -1160,7 +1329,8 @@ document.addEventListener('DOMContentLoaded', () => {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const { pathname, method } = url;
+    const { pathname } = url;
+    const { method } = request;
 
     // OPTIONS preflight
     if (method === 'OPTIONS') {
