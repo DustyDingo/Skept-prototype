@@ -1,0 +1,14 @@
+name = "skept-verdict"
+main = "verdict-worker.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "SKEPT_ANALYSIS_DB"
+database_name = "skept-analysis"
+database_id = "f1c17fe3-fd52-48cb-a22c-f4658918e301"
+
+# No KV, no R2, no secrets needed.
+# Route registered manually in Cloudflare dashboard to avoid Pages conflicts:
+#   Worker: skept-verdict
+#   Route:  skept.co/v/*
+#   Zone:   skept.co
