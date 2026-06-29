@@ -124,7 +124,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.69 | Frame confidence scalar suppresses verdict on text-to-video synthetic content (certainty low on generative content); correct fix is Sightengine reintroduction (§3.20) |
 | §3.70 | Audio `max(raw, 0.0)` formula — clean audio clusters near 0.0 correctly, but pending live data validation across more clip types |
 | §3.72 | `video_job_audio_label` not forwarded from `deepfake.py` to `audio.py` — no scoring impact, one-liner fix pending |
-| §3.76 | Logo colour: loupe mark renders grey in nav — FIXED in `history.html` (explicit `color:#1a1a1a` on SVG and `<use>` element; `var(--ink)` does not cascade reliably through `<use>` shadow tree). Apply same fix when nav is added to other pages. |
+| §3.76 | Logo SVG colour fix: loupe mark rendering grey in nav on all five surfaces (index.html, history.html, verify.html, settings.html, verdict-worker.js). Fix: set `color: var(--ink)` explicitly on SVG element in nav markup. One-line fix per file. |
 | §3.77 | verify.html: scaffold only — full build pending (next priority after logo fix) |
 | §3.78 | settings.html: scaffold only — not yet built |
 
@@ -183,6 +183,7 @@ Auto-deploys on push to main — no manual deploy needed for frontend changes.
 - skept-revenuecat-webhook → skept.co/api/webhooks/revenuecat
 - skept-verify → skept.co/api/verify/*
 - skept-history → skept.co/api/history/*
+- skept-verdict → skept.co/v/* → cloudflare/verdict-worker.js → wrangler-verdict.toml (route registered manually in Cloudflare dashboard)
 
 ---
 
@@ -223,13 +224,14 @@ Magic link passwordless auth. Sign-in page at skept.co sets skept_session httpOn
 ```
 frontend/
   index.html          — sign-in (LIVE — magic link)
-  verify.html         — verify flow (scaffold only — not yet built)
+  verify.html         — authenticated verify page; three view states (intake → analysing → verdict); wired to /api/verify/*
   history.html        — analysis history (LIVE — cream shell, quota strip, filter chips, card list, delete flow)
   settings.html       — account settings (scaffold only — not yet built)
   public/_redirects   — MPA routing for Cloudflare Pages
   src/
     api.js            — shared fetch wrapper (all fetch calls, credentials: include, relative /api/* paths)
     auth.js           — shared auth guard (checkAuth, logout)
+    verify.js         — verify page logic (auth guard, startAnalysis, poll loop, verdict render)
     history.js        — history page logic (all history page JS)
     pages/
       signin.js
