@@ -124,6 +124,9 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.69 | Frame confidence scalar suppresses verdict on text-to-video synthetic content (certainty low on generative content); correct fix is Sightengine reintroduction (§3.20) |
 | §3.70 | Audio `max(raw, 0.0)` formula — clean audio clusters near 0.0 correctly, but pending live data validation across more clip types |
 | §3.72 | `video_job_audio_label` not forwarded from `deepfake.py` to `audio.py` — no scoring impact, one-liner fix pending |
+| §3.76 | Logo colour: loupe mark renders grey in nav — SVG color not resolving to `#1a1a1a`. Fix: set `color: #1a1a1a` explicitly on SVG use element in nav markup. Affects all four frontend pages. |
+| §3.77 | verify.html: scaffold only — full build pending (next priority after logo fix) |
+| §3.78 | settings.html: scaffold only — not yet built |
 
 ---
 
@@ -140,6 +143,22 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 **Railway (prototype):** Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
 **Production stack (not yet built):** Cloudflare Pages + Workers + D1 + R2 + KV. Railway decommissioned at production launch.
+
+---
+
+## Current build state (as of 29 Jun 2026)
+
+| Component | Status |
+|---|---|
+| Auth flow | LIVE — magic link, cookie session, `/api/auth/me`, `/api/auth/logout` |
+| History page (`history.html`) | LIVE at skept.co/history — cream shell, quota strip, filter chips, card list, delete flow |
+| History Worker | LIVE at skept.co/api/history/* |
+| Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
+| Verify Worker | LIVE at skept.co/api/verify/* — backend complete, frontend scaffold only |
+| Settings Worker | LIVE at skept.co/api/settings/* |
+| verify.html | Scaffold only — not yet built |
+| settings.html | Scaffold only — not yet built |
+| Logo / loupe mark colour in nav | Bug — renders grey, fix pending (§3.76) |
 
 ---
 
@@ -203,27 +222,38 @@ Magic link passwordless auth. Sign-in page at skept.co sets skept_session httpOn
 
 ```
 frontend/
-  index.html          (sign-in)
-  verify.html         (verify flow)
-  history.html        (analysis history)
-  settings.html       (account settings)
-  public/_redirects   (MPA routing for Cloudflare Pages)
+  index.html          — sign-in (LIVE — magic link)
+  verify.html         — verify flow (scaffold only — not yet built)
+  history.html        — analysis history (LIVE — cream shell, quota strip, filter chips, card list, delete flow)
+  settings.html       — account settings (scaffold only — not yet built)
+  public/_redirects   — MPA routing for Cloudflare Pages
   src/
-    api.js            (all fetch calls, credentials: include, relative /api/* paths)
-    auth.js           (checkAuth — called on load of every protected page)
+    api.js            — shared fetch wrapper (all fetch calls, credentials: include, relative /api/* paths)
+    auth.js           — shared auth guard (checkAuth, logout)
+    history.js        — history page logic (all history page JS)
     pages/
       signin.js
       verify.js
-      history.js
       settings.js
 ```
 
 ---
 
-## Brand tokens
+## Design system
 
-AMBER `#DFB87B` · INK `#1A1A1A` · GRAY `#4A4A4A` · SOFT `#8A8A8A` · CREAM `#FAF8F5` · AMBER_LIGHT `#F5E6C8` · RULE `#E0E0E0`
-Display font: Palatino Linotype (wordmark only). Body: Calibri.
+**Interior page shell (all authenticated pages):**
+- Background: `#faf8f3` (cream)
+- Accent / amber: `#b87400`
+- Nav: sticky, frosted glass (`backdrop-filter: saturate(140%) blur(8px)`), `border-bottom: 1px solid #e8e4db`
+- Wordmark: Sorts Mill Goudy italic, 22px
+- Body font: Inter
+- Max content width: 1080px centred, padding 0 32px
+- Mobile (≤640px): padding 0 16px
+- Loupe mark SVG: solid dark circle (`#1a1a1a`), cream italic S (`#faf8f3`), handle lower-left 45°
+
+**CSS custom properties:**
+`--amber: #b87400` · `--ink: #1a1a1a` · `--ink-soft: #5a5a5a` · `--ink-softer: #8a8a8a` · `--bg: #faf8f3` · `--card: #ffffff` · `--rule: #e8e4db` · `--green: #3a7a50` · `--green-light: #7aaa88` · `--red-state: #a83a2a`
+Display font: Sorts Mill Goudy (wordmark only, italic). Body: Inter.
 
 ---
 
@@ -282,6 +312,17 @@ free=5, lite=10, plus=20, pro=40, max=60
 All billing secrets must be rotated if exposed. Reprovision via:
   npx wrangler@latest secret put <SECRET_NAME> --config cloudflare/<toml-file>
 Never hardcode secrets in source files or commit them to the repo.
+
+---
+
+## History Worker
+
+- File: `cloudflare/history-worker.js`
+- Toml: `cloudflare/wrangler-history.toml`
+- Routes: `GET /api/history/list`, `DELETE /api/history/:id`, `DELETE /api/history/all`
+- Bindings: SKEPT_ANALYSIS_DB (D1 skept-analysis), AUTH_SESSIONS (KV)
+- Auth: reads `skept_session` cookie or `Authorization: Bearer` header; validates against AUTH_SESSIONS KV
+- Deploy: `cd cloudflare && npx wrangler@latest deploy --config wrangler-history.toml`
 
 ---
 
