@@ -129,12 +129,16 @@ const SHARED_FONTS = `
   <link href="https://fonts.googleapis.com/css2?family=Sorts+Mill+Goudy:ital,wght@0,400;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">`;
 
 const SKEPT_MARK_SVG = `
-<svg style="width:0;height:0;position:absolute" aria-hidden="true">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="skept-mark" viewBox="0 0 100 100">
-      <rect x="26" y="63" width="28" height="11" rx="5.5" transform="rotate(135,26,69)" fill="currentColor"/>
-      <circle cx="58" cy="42" r="38" fill="currentColor"/>
-      <text x="57" y="62" font-family="'Sorts Mill Goudy',serif" font-style="italic" font-weight="400" font-size="60" text-anchor="middle" fill="#faf8f3">S</text>
+      <rect x="29.7" y="64.3" width="30" height="12" rx="6"
+            transform="rotate(135, 29.7, 70.3)" fill="currentColor"/>
+      <circle cx="58" cy="42" r="40" fill="currentColor"/>
+      <circle cx="58" cy="42" r="35" fill="#2a2a2a"/>
+      <text x="57" y="62" font-family="'Sorts Mill Goudy', serif"
+            font-style="italic" font-size="62" text-anchor="middle"
+            fill="#faf8f3">S</text>
     </symbol>
   </defs>
 </svg>`;
@@ -142,74 +146,97 @@ const SKEPT_MARK_SVG = `
 const SHARED_CSS = `
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --amber:        #b87400;
-      --amber-warm:   #c07800;
-      --amber-soft:   rgba(184,116,0,0.08);
-      --ink:          #1a1a1a;
-      --ink-soft:     #5a5a5a;
-      --ink-softer:   #8a8a8a;
-      --bg:           #faf8f3;
-      --card:         #ffffff;
-      --rule:         #e8e4db;
-      --green:        #3a7a50;
-      --green-light:  #7aaa88;
-      --amber-state:  #c07800;
-      --red-state:    #a83a2a;
+      --amber:          #b87400;
+      --amber-warm:     #c07800;
+      --amber-soft:     rgba(184,116,0,0.09);
+      --amber-border:   rgba(184,116,0,0.25);
+      --ink:            #1a1a1a;
+      --ink-soft:       #5a5a5a;
+      --ink-softer:     #8a8a8a;
+      --rule:           #e8e4db;
+      --rule-soft:      #f0ece2;
+      --bg:             #faf8f3;
+      --card:           #ffffff;
+      --green:          #3a7a50;
+      --green-light:    #7aaa88;
+      --amber-state:    #c07800;
+      --red-state:      #a83a2a;
       --goudy: 'Sorts Mill Goudy', Georgia, serif;
       --ui:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     body { font-family: var(--ui); background: var(--bg); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
 
     /* NAV */
-    nav {
-      position: sticky; top: 0; z-index: 100;
-      backdrop-filter: saturate(140%) blur(8px);
+    .skept-nav {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      height: 56px;
       background: rgba(250,248,243,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--rule);
-      padding: 0 32px; height: 52px;
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 0;
     }
-    .nav-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); }
-    .nav-brand .wordmark { font-family: var(--goudy); font-style: italic; font-size: 22px; color: var(--ink); }
-    .nav-right { display: flex; align-items: center; gap: 20px; }
-    .nav-link { font-family: var(--ui); font-size: 13px; color: var(--ink-soft); text-decoration: none; }
-    .nav-link:hover { color: var(--ink); }
+    .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink); flex-shrink: 0; }
+    .nav-logo svg { display: block; }
+    .nav-wordmark { font-family: var(--goudy); font-style: italic; font-size: 21px; line-height: 1; color: var(--ink); letter-spacing: -0.01em; }
+    .nav-spacer { flex: 1; }
+    .nav-links { display: flex; align-items: center; gap: 4px; }
+    .nav-link {
+      font-size: 13.5px; font-weight: 400; color: var(--ink-soft); text-decoration: none;
+      padding: 6px 12px; border-radius: 5px; transition: color 0.15s, background 0.15s;
+      white-space: nowrap; cursor: pointer; background: none; border: none;
+      font-family: var(--ui); line-height: 1;
+    }
+    .nav-link:hover { color: var(--ink); background: rgba(0,0,0,0.04); }
+    .nav-link.active { color: var(--amber); font-weight: 500; }
+    .nav-link--signin { color: var(--ink); font-weight: 500; border: 1px solid var(--rule); background: var(--card); }
+    .nav-link--signin:hover { border-color: var(--amber-border); background: var(--card); color: var(--ink); }
+    .nav-auth   { display: none; }
+    .nav-unauth { display: none; }
+    body[data-auth="true"]  .nav-auth   { display: flex; align-items: center; gap: 4px; }
+    body[data-auth="false"] .nav-unauth { display: flex; align-items: center; gap: 4px; }
 
     /* FOOTER */
-    footer {
-      border-top: 1px solid var(--rule); background: var(--bg);
-      padding: 24px 32px;
-      display: flex; align-items: center; justify-content: space-between;
+    .skept-footer {
+      border-top: 1px solid var(--rule);
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
     }
-    .footer-brand { display: flex; align-items: center; gap: 7px; }
-    .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink); }
-    .footer-copy { font-size: 12px; color: var(--ink-softer); }
-
-    @media (max-width: 640px) {
-      nav { padding: 0 16px; }
-      footer { padding: 20px 16px; }
-    }`;
+    .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink-softer); }
+    .footer-logo svg { display: block; color: var(--ink-softer); }
+    .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink-softer); line-height: 1; letter-spacing: -0.01em; }
+    .footer-copy { font-size: 12px; color: var(--ink-softer); letter-spacing: 0.01em; }`;
 
 function renderSharedNav() {
   return `
-<nav>
-  <a class="nav-brand" href="https://skept.co">
-    <svg width="28" height="28" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
-    <span class="wordmark">Skept</span>
+<nav class="skept-nav" aria-label="Main navigation">
+  <a class="nav-logo" href="/">
+    <svg width="26" height="26" aria-hidden="true"><use href="#skept-mark"/></svg>
+    <span class="nav-wordmark">Skept</span>
   </a>
-  <div class="nav-right">
+  <div class="nav-spacer"></div>
+  <div class="nav-links nav-unauth">
     <a class="nav-link" href="/how-it-works">How it works</a>
+    <a class="nav-link nav-link--signin" href="/signin">Sign in</a>
   </div>
 </nav>`;
 }
 
 function renderSharedFooter() {
   return `
-<footer>
-  <div class="footer-brand">
-    <svg width="20" height="20" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
+<footer class="skept-footer">
+  <a class="footer-logo" href="/">
+    <svg width="20" height="20" aria-hidden="true"><use href="#skept-mark"/></svg>
     <span class="footer-wordmark">Skept</span>
-  </div>
+  </a>
   <span class="footer-copy">© 2026 Skept</span>
 </footer>`;
 }
@@ -230,7 +257,7 @@ function render404() {
     .home-link:hover { text-decoration: underline; }
   </style>
 </head>
-<body>
+<body data-auth="false">
 ${SKEPT_MARK_SVG}
 ${renderSharedNav()}
 <main>
@@ -371,7 +398,7 @@ function renderVerdictPage(row, permalinkId) {
     }
   </style>
 </head>
-<body>
+<body data-auth="false">
 ${SKEPT_MARK_SVG}
 ${renderSharedNav()}
 

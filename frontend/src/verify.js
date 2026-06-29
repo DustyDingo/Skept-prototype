@@ -208,11 +208,6 @@ async function init() {
   const user = await checkAuth();
   if (!user) return;
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
-    await logout();
-    window.location.href = '/';
-  });
-
   document.getElementById('try-another-link').addEventListener('click', e => {
     e.preventDefault();
     resetToIntake();

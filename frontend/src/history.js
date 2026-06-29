@@ -207,11 +207,6 @@ async function init() {
   const user = await checkAuth();
   if (!user) return;
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
-    await logout();
-    window.location.href = '/';
-  });
-
   document.querySelectorAll('#filter-chips .chip').forEach(chip => {
     chip.addEventListener('click', () => setFilter(chip.dataset.filter));
   });
