@@ -59,11 +59,19 @@ export default {
       // GET /api/history  or  GET /api/history/list
       if (method === 'GET' && (pathname === '/api/history' || pathname === '/api/history/list')) {
         const TIER_QUOTA = { free: 5, lite: 10, plus: 20, pro: 40, max: 60 };
-        const quotaRow = await env.SKEPT_ANALYSIS_DB.prepare(
-          'SELECT quota_used, quota_limit FROM quota_usage WHERE user_id = ?'
-        ).bind(userId).first();
-        const quota_used = quotaRow?.quota_used ?? 0;
-        const quota_limit = quotaRow?.quota_limit ?? (TIER_QUOTA[tier] ?? 5);
+        let quota_used = 0;
+        let quota_limit = TIER_QUOTA[tier] ?? 5;
+        try {
+          const quotaRow = await env.SKEPT_ANALYSIS_DB.prepare(
+            'SELECT quota_used, quota_limit FROM quota_usage WHERE user_id = ?'
+          ).bind(userId).first();
+          if (quotaRow) {
+            quota_used = quotaRow.quota_used ?? 0;
+            quota_limit = quotaRow.quota_limit ?? quota_limit;
+          }
+        } catch (quotaErr) {
+          console.error('[history-worker] quota fetch failed, defaulting:', quotaErr.message);
+        }
 
         const { results } = await env.SKEPT_ANALYSIS_DB.prepare(`
           SELECT id, verdict_state, score, platform, clip_url, thumbnail_r2_key,
