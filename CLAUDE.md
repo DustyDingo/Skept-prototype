@@ -87,6 +87,7 @@ In-memory Python dict. Stateless — jobs lost on restart. Phase 1 must replace 
 - yt-dlp handles URL ingestion for TikTok, YouTube, Instagram (server-side, dev/testing only for Instagram).
 - Discord CDN links (`cdn.discordapp.com/attachments/…`) bypass yt-dlp — direct file download branch.
 - All clips trimmed to 15 seconds max before Resemble submission (`ffmpeg -t 15 -c copy`). Logging: `trimmed` bool + `original_duration_sec` int written to job result.
+- Analysis segment duration: 5 seconds per segment. Segment count by tier: Free/Lite = 1 segment (5s), Plus/Pro = 2 segments (10s), Max = 3 segments (15s). Worker references tier → segment count only; duration is a constant.
 - Temp file cleanup runs post-processing on Railway.
 - URL validation (scheme=http/https, non-empty netloc) must occur at `/api/analyse` before yt-dlp dispatch. Returns 400 on failure.
 
@@ -127,6 +128,18 @@ Previously open items now confirmed closed via consolidation checklist:
 - §3.72 — video_job_audio_label not forwarded: closed (27 Jun)
 - §3.76 — Logo SVG colour fix + nav/footer standardisation: absorbed into full nav standardisation pass; Claude Code prompt issued (29 Jun)
 
+| Item | Description |
+|---|---|
+| §3.77 | Segment duration updated 4s → 5s across all tiers. Pricing summary v2.2 requires update to v2.3. Engineers Brief §4.10 and Project Brief §11.5 require update. |
+| §3.78 | Founder cohort Stripe coupon changed to tier-variable. Applicable to Plus/Pro/Max only. Single coupon code; tier eligibility enforced at checkout link distribution point. |
+| §3.79 | Usage-triggered subject list growth. Create `subject_candidates` table in skept-analysis D1 (name TEXT, wikidata_qid TEXT nullable, hit_count INTEGER DEFAULT 1, first_seen INTEGER, status TEXT DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected'))). Update NER pipeline: on PERSON entity extraction, if absent from live list, upsert to subject_candidates (increment hit_count on conflict). Admin review surface deferred to §3.80. |
+| §3.80 | Admin view — priority build. Subject candidate queue (§3.79) is first functional requirement. Other surfaces: job volume, error rates, flagged verdicts, user management. Gated behind admin-only auth. Design session required before build. |
+| §3.81 | Per-frame timestamp + score + certainty data from Resemble response to be captured and stored internally. Admin-only. Purpose: sampling strategy calibration. Deferred until admin view scoped (§3.80). |
+| §3.82 | Resemble `metrics.consistency` unused. Candidate for future evidence card note ("manipulation signal concentrated vs distributed"). Phase 2 deferred — no action. |
+| §3.83 | LLM-generated verdict summary for Pro/Max tiers. Post-analysis structured data → plain-English narrative card on verdict page. Free/Lite/Plus receive templated copy. Phase 2 deferred — no action. |
+| §3.84 | Railway confirmed permanent yt-dlp utility service. Fly.io evaluated and rejected. CLAUDE.md and Engineers Brief §4.2 to be updated. |
+| §3.85 | Magic link email rebrand. Current email uses Resend default dark template. Target: CREAM (#FAF8F5) bg, INK (#1A1A1A) text, loupe mark SVG at top, AMBER (#DFB87B) button, sender display name "Skept". Update `html` and `from` fields in skept-auth Worker Resend call. |
+
 ---
 
 ## Environment variables
@@ -141,7 +154,8 @@ Previously open items now confirmed closed via consolidation checklist:
 ## Deploy
 
 **Cloudflare Pages (production):** Push to `main` → auto-deploy. No manual deploy needed for frontend changes.
-**Railway (prototype):** Push to `main` → auto-deploy. Being decommissioned at production launch.
+**Railway (prototype / yt-dlp microservice):** Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
+**Production stack:** Cloudflare Pages + Workers + D1 + R2 + KV. Live at skept.co. Railway retained permanently as a single-purpose yt-dlp ingestion microservice ($5/month Hobby plan) — not being decommissioned. All other services are on Cloudflare.
 
 ---
 
