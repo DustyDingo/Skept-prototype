@@ -4,193 +4,337 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Skept — Verify</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sorts+Mill+Goudy:ital,wght@0,400;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --amber: #DFB87B; --amber-light: #F5E6C8; --ink: #1A1A1A;
-      --gray: #4A4A4A; --soft: #8A8A8A; --cream: #FAF8F5; --rule: #E0E0E0;
-      --green: #2D7A4F; --green-bg: #EBF5EF; --red: #C0392B; --red-bg: #FDECEA;
-      --amber-bg: #FEF9EE;
+      --amber:        #b87400;
+      --amber-warm:   #c07800;
+      --amber-soft:   rgba(184,116,0,0.08);
+      --ink:          #1a1a1a;
+      --ink-soft:     #5a5a5a;
+      --ink-softer:   #8a8a8a;
+      --rule:         #e8e4db;
+      --bg:           #faf8f3;
+      --card:         #ffffff;
+      --green:        #3a7a50;
+      --green-light:  #7aaa88;
+      --amber-state:  #c07800;
+      --red-state:    #a83a2a;
+      --goudy: 'Sorts Mill Goudy', Georgia, serif;
+      --ui:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    body { font-family: Calibri, Arial, sans-serif; background: var(--cream); color: var(--ink); min-height: 100vh; }
+    body {
+      font-family: var(--ui); background: var(--bg); color: var(--ink);
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+
+    /* ── NAV ── */
     nav {
       position: sticky; top: 0; z-index: 100;
-      background: rgba(250,248,245,0.94); backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--rule); padding: 0 28px;
-      height: 52px; display: flex; align-items: center; justify-content: space-between;
+      backdrop-filter: saturate(140%) blur(8px);
+      background: rgba(250,248,243,0.92);
+      border-bottom: 1px solid var(--rule);
+      padding: 0 32px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
     }
-    .wordmark {
-      font-family: 'Palatino Linotype', Palatino, serif;
-      font-style: italic; font-size: 22px; color: var(--amber); text-decoration: none;
+    .nav-brand {
+      display: flex; align-items: center; gap: 8px;
+      text-decoration: none; color: var(--ink);
     }
-    .nav-right { display: flex; align-items: center; gap: 16px; }
-    .nav-tier {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
-      color: var(--amber); border: 1px solid var(--amber); padding: 2px 8px; border-radius: 3px;
+    .nav-brand .wordmark {
+      font-family: var(--goudy); font-style: italic; font-size: 22px; color: var(--ink);
     }
-    .nav-link { font-size: 13px; color: var(--gray); text-decoration: none; }
+    .nav-right { display: flex; align-items: center; gap: 20px; }
+    .nav-link {
+      font-family: var(--ui); font-size: 13px; color: var(--ink-soft); text-decoration: none;
+    }
     .nav-link:hover { color: var(--ink); }
-    main { max-width: 680px; margin: 0 auto; padding: 48px 24px 96px; }
-    h1 { font-size: 26px; font-weight: 600; margin-bottom: 6px; }
-    .sub { font-size: 14px; color: var(--soft); margin-bottom: 32px; }
-    .url-row { display: flex; gap: 10px; margin-bottom: 8px; }
-    input[type="url"] {
+    .nav-logout {
+      font-family: var(--ui); font-size: 13px; color: var(--ink-softer);
+      background: none; border: none; cursor: pointer; padding: 0;
+    }
+    .nav-logout:hover { color: var(--ink); }
+
+    /* ── MAIN ── */
+    main {
+      max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px;
+      width: 100%; flex: 1;
+    }
+
+    /* ── VIEW CONTAINERS ── */
+    .view-centre { max-width: 640px; margin: 0 auto; }
+    .view-centre.narrow { max-width: 560px; }
+    #view-analysing { text-align: center; }
+
+    /* ── INTAKE ── */
+    .eyebrow {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+      color: var(--amber); text-transform: uppercase; margin-bottom: 14px;
+    }
+    .intake-headline {
+      font-size: 32px; font-weight: 600; line-height: 1.2;
+      color: var(--ink); margin-bottom: 10px;
+    }
+    .intake-headline em { font-style: italic; color: var(--amber); }
+    .intake-sub {
+      font-size: 15px; color: var(--ink-soft); margin-bottom: 28px; line-height: 1.5;
+    }
+    .url-row { display: flex; gap: 10px; margin-bottom: 14px; }
+    .url-input {
       flex: 1; padding: 12px 14px;
       border: 1.5px solid var(--rule); border-radius: 6px;
-      font-family: Calibri, Arial, sans-serif; font-size: 14px; color: var(--ink);
-      background: white; outline: none; transition: border-color 0.15s;
+      font-family: var(--ui); font-size: 14px; color: var(--ink);
+      background: var(--card); outline: none; transition: border-color 0.15s, box-shadow 0.15s;
     }
-    input[type="url"]:focus { border-color: var(--amber); }
-    input[type="url"]::placeholder { color: var(--soft); }
+    .url-input:focus {
+      border-color: var(--amber);
+      box-shadow: 0 0 0 3px rgba(184,116,0,0.12);
+    }
+    .url-input::placeholder { color: var(--ink-softer); }
+    .url-input.error { border-color: var(--red-state); }
     .check-btn {
-      padding: 12px 24px; background: var(--ink); color: white;
+      padding: 12px 24px; background: var(--ink); color: var(--bg);
       border: none; border-radius: 6px;
-      font-family: Calibri, Arial, sans-serif; font-size: 14px; font-weight: 600;
+      font-family: var(--ui); font-size: 14px; font-weight: 600;
       cursor: pointer; white-space: nowrap; transition: opacity 0.15s;
     }
-    .check-btn:hover { opacity: 0.85; }
+    .check-btn:hover { opacity: 0.82; }
     .check-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .platform-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    .chip {
-      font-size: 11px; color: var(--soft);
-      border: 1px solid var(--rule); padding: 3px 9px; border-radius: 20px;
+    .platform-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .platform-pill {
+      font-size: 11px; color: var(--ink-softer);
+      border: 1px solid var(--rule); padding: 3px 10px; border-radius: 20px;
+      user-select: none; pointer-events: none;
     }
-    .error-box {
-      display: none; margin-top: 14px; padding: 12px 14px;
-      background: var(--red-bg); border: 1px solid #C0392B30;
-      border-radius: 6px; font-size: 13px; color: var(--red);
+    .inline-error { font-size: 13px; color: var(--red-state); margin-top: 10px; display: none; }
+    .inline-error.visible { display: block; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-6px); }
+      40%       { transform: translateX(6px); }
+      60%       { transform: translateX(-4px); }
+      80%       { transform: translateX(4px); }
+    }
+    .shake { animation: shake 0.4s ease; }
+
+    /* ── ANALYSING ── */
+    .clip-url-display { font-size: 13px; color: var(--ink-softer); margin-bottom: 28px; word-break: break-all; }
+    .loupe-pulse-wrap { display: flex; justify-content: center; margin-bottom: 24px; }
+    .loupe-pulse { animation: loupePulse 1.8s ease-in-out infinite; color: var(--amber); }
+    @keyframes loupePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.88); }
+    }
+    .analysing-heading { font-size: 26px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+    .analysing-heading em { font-style: italic; color: var(--amber); }
+    .analysing-sub { font-size: 14px; color: var(--ink-soft); margin-bottom: 28px; }
+    .progress-track {
+      position: relative; height: 3px; background: var(--rule); border-radius: 2px;
+      overflow: hidden; max-width: 400px; margin: 0 auto;
+    }
+    .progress-bar {
+      position: absolute; height: 100%; background: var(--amber); border-radius: 2px;
+      animation: progressSlide 2s ease-in-out infinite;
+    }
+    @keyframes progressSlide {
+      0%   { left: -50%; width: 40%; }
+      50%  { left: 40%; width: 50%; }
+      100% { left: 110%; width: 40%; }
+    }
+    .analysis-error { font-size: 13px; color: var(--red-state); margin-top: 24px; display: none; }
+    .analysis-error.visible { display: block; }
+    .analysis-error a { color: var(--amber); text-decoration: underline; cursor: pointer; }
+
+    /* ── VERDICT ── */
+    .verdict-hero {
+      border-radius: 8px; border: 1px solid var(--rule);
+      overflow: hidden; background: var(--card); margin-bottom: 20px;
+    }
+    .verdict-hero-band { height: 6px; width: 100%; }
+    .verdict-hero-body { padding: 24px; }
+    .verdict-hero-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .verdict-state-pill {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 4px 10px; border-radius: 20px; color: white;
+    }
+    .verdict-headline { font-size: 15px; color: var(--ink-soft); margin-bottom: 20px; line-height: 1.5; }
+    .verdict-score-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+    .verdict-score-pct { font-size: 38px; font-weight: 600; line-height: 1; }
+    .verdict-score-hedge { font-size: 13px; color: var(--ink-softer); }
+    .verdict-source-row {
+      margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rule);
+      font-size: 12px; color: var(--ink-softer);
     }
 
-    /* Loading */
-    #view-loading { display: none; }
-    .loading-label { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
-    .loading-sub { font-size: 13px; color: var(--soft); margin-bottom: 28px; }
-    .spinner {
-      width: 40px; height: 40px; border: 3px solid var(--rule);
-      border-top-color: var(--amber); border-radius: 50%;
-      animation: spin 0.9s linear infinite; margin-bottom: 20px;
+    /* ── EVIDENCE ── */
+    .evidence-section { margin-bottom: 24px; }
+    .evidence-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--ink-softer);
+      margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule);
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .evidence-card {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid var(--rule);
+    }
+    .evidence-card:last-child { border-bottom: none; }
+    .evidence-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+    .evidence-title { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 3px; }
+    .evidence-detail { font-size: 13px; color: var(--ink-soft); }
 
-    /* Result */
-    #view-result { display: none; }
-    .verdict-band {
-      padding: 22px 24px; border-radius: 10px; margin-bottom: 24px;
+    /* ── ACTIONS ── */
+    .verdict-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn-primary {
+      padding: 11px 22px; background: var(--ink); color: var(--bg);
+      border: none; border-radius: 6px;
+      font-family: var(--ui); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s;
     }
-    .verdict-band.green { background: var(--green-bg); border: 1.5px solid #2D7A4F30; }
-    .verdict-band.amber { background: var(--amber-bg); border: 1.5px solid #DFB87B50; }
-    .verdict-band.red   { background: var(--red-bg);   border: 1.5px solid #C0392B30; }
-    .verdict-label { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
-    .green .verdict-label { color: var(--green); }
-    .amber .verdict-label { color: #8B6914; }
-    .red   .verdict-label { color: var(--red); }
-    .verdict-url { font-size: 12px; color: var(--soft); word-break: break-all; }
+    .btn-primary:hover { opacity: 0.82; }
+    .btn-secondary {
+      padding: 11px 22px; background: none; color: var(--ink);
+      border: 1.5px solid var(--rule); border-radius: 6px;
+      font-family: var(--ui); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--ink-softer); }
 
-    .score-section { margin-bottom: 24px; }
-    .score-row {
-      display: flex; justify-content: space-between;
-      font-size: 12px; color: var(--soft); margin-bottom: 6px;
+    /* ── TOAST ── */
+    .copy-toast {
+      position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+      background: var(--ink); color: var(--bg);
+      font-size: 13px; padding: 9px 18px; border-radius: 6px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 200;
     }
-    .score-bar {
-      height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden;
-    }
-    .score-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
-    .score-fill.green { background: var(--green); }
-    .score-fill.amber { background: var(--amber); }
-    .score-fill.red   { background: var(--red); }
+    .copy-toast.show { opacity: 1; }
 
-    .pillars-section h3 {
-      font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-      color: var(--soft); margin-bottom: 10px; padding-bottom: 6px;
-      border-bottom: 1px solid var(--rule);
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--rule); background: var(--bg);
+      padding: 24px 32px;
+      display: flex; align-items: center; justify-content: space-between;
     }
-    .pillar-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 0; border-bottom: 1px solid var(--rule); font-size: 14px;
-    }
-    .pillar-row:last-child { border-bottom: none; }
-    .pillar-name { color: var(--gray); }
-    .pillar-score { font-weight: 600; }
-    .pillar-score.green { color: var(--green); }
-    .pillar-score.amber { color: #8B6914; }
-    .pillar-score.red   { color: var(--red); }
-    .pillar-score.soft  { color: var(--soft); }
+    .footer-brand { display: flex; align-items: center; gap: 7px; }
+    .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink); }
+    .footer-copy { font-size: 12px; color: var(--ink-softer); }
 
-    .retry-btn {
-      display: inline-block; margin-top: 24px;
-      padding: 11px 22px; border: 1.5px solid var(--ink); border-radius: 6px;
-      font-family: Calibri, Arial, sans-serif; font-size: 13px; font-weight: 600;
-      color: var(--ink); background: none; cursor: pointer;
-      transition: all 0.15s; text-decoration: none;
+    /* ── MOBILE ── */
+    @media (max-width: 640px) {
+      nav    { padding: 0 16px; }
+      main   { padding: 32px 16px 64px; }
+      footer { padding: 20px 16px; }
+      .intake-headline { font-size: 26px; }
+      .verdict-score-pct { font-size: 30px; }
     }
-    .retry-btn:hover { background: var(--ink); color: white; }
   </style>
 </head>
 <body>
+
+<svg style="width:0;height:0;position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="skept-mark" viewBox="0 0 100 100">
+      <rect x="26" y="63" width="28" height="11" rx="5.5" transform="rotate(135,26,69)" fill="currentColor"/>
+      <circle cx="58" cy="42" r="38" fill="currentColor"/>
+      <text x="57" y="62" font-family="'Sorts Mill Goudy',serif" font-style="italic" font-weight="400" font-size="60" text-anchor="middle" fill="#faf8f3">S</text>
+    </symbol>
+  </defs>
+</svg>
+
 <nav>
-  <a class="wordmark" href="/verify.html">Skept</a>
+  <a class="nav-brand" href="/">
+    <svg width="28" height="28" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
+    <span class="wordmark">Skept</span>
+  </a>
   <div class="nav-right">
-    <span class="nav-tier" id="user-tier"></span>
     <a class="nav-link" href="/history.html">History</a>
-    <a class="nav-link" href="/settings.html">Settings</a>
+    <button class="nav-logout" id="logout-btn">Sign out</button>
   </div>
 </nav>
 
 <main>
-  <div id="view-intake">
-    <h1>Verify a clip</h1>
-    <p class="sub">Paste a TikTok, Instagram, YouTube, X or Discord link.</p>
 
-    <form id="verify-form">
-      <div class="url-row">
-        <input type="url" id="url-input" placeholder="https://www.tiktok.com/@…" autocomplete="off" required>
-        <button type="submit" class="check-btn" id="check-btn">Check it</button>
-      </div>
-      <div class="platform-chips">
-        <span class="chip">TikTok</span>
-        <span class="chip">Instagram</span>
-        <span class="chip">YouTube Shorts</span>
-        <span class="chip">X / Twitter</span>
-        <span class="chip">Bluesky</span>
-        <span class="chip">Discord CDN</span>
-      </div>
-    </form>
-
-    <div class="error-box" id="error-box"></div>
+  <!-- VIEW 1: INTAKE -->
+  <div id="view-intake" class="view-centre">
+    <p class="eyebrow">VERIFY A CLIP</p>
+    <h1 class="intake-headline">Is this clip <em>real?</em> Check it.</h1>
+    <p class="intake-sub">Paste a link from TikTok, Instagram, YouTube, X, or Bluesky.</p>
+    <div class="url-row">
+      <input type="text" id="url-input" class="url-input"
+             placeholder="https://www.tiktok.com/@..." autocomplete="off">
+      <button id="check-btn" class="check-btn">Check it</button>
+    </div>
+    <div class="platform-pills">
+      <span class="platform-pill">TikTok</span>
+      <span class="platform-pill">Instagram</span>
+      <span class="platform-pill">YouTube Shorts</span>
+      <span class="platform-pill">X / Twitter</span>
+      <span class="platform-pill">Bluesky</span>
+      <span class="platform-pill">Discord CDN</span>
+    </div>
+    <p class="inline-error" id="url-error">Please paste a valid video URL.</p>
   </div>
 
-  <div id="view-loading">
-    <div class="spinner"></div>
-    <div class="loading-label">Analysing…</div>
-    <div class="loading-sub">This usually takes 15–30 seconds.</div>
+  <!-- VIEW 2: ANALYSING -->
+  <div id="view-analysing" class="view-centre" hidden>
+    <p class="clip-url-display" id="clip-url-display"></p>
+    <div class="loupe-pulse-wrap">
+      <svg width="56" height="56" class="loupe-pulse"><use href="#skept-mark"/></svg>
+    </div>
+    <h2 class="analysing-heading"><em>Analysing</em> your clip.</h2>
+    <p class="analysing-sub">Running signal analysis. This takes 20–40 seconds.</p>
+    <div class="progress-track">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <p class="analysis-error" id="analysis-error">
+      Analysis failed. Please try again. <a id="try-another-link" href="#">Try another clip</a>
+    </p>
   </div>
 
-  <div id="view-result">
-    <div class="verdict-band amber" id="verdict-band">
-      <div class="verdict-label" id="verdict-label"></div>
-      <div class="verdict-url" id="verdict-url"></div>
-    </div>
-
-    <div class="score-section">
-      <div class="score-row">
-        <span>Authentic</span>
-        <span id="score-pct"></span>
-        <span>Manipulated</span>
+  <!-- VIEW 3: VERDICT -->
+  <div id="view-verdict" class="view-centre narrow" hidden>
+    <div class="verdict-hero">
+      <div class="verdict-hero-band" id="verdict-hero-band"></div>
+      <div class="verdict-hero-body">
+        <div class="verdict-hero-top">
+          <svg width="32" height="32" id="verdict-loupe"><use href="#skept-mark"/></svg>
+          <span class="verdict-state-pill" id="verdict-state-pill"></span>
+        </div>
+        <p class="verdict-headline" id="verdict-headline"></p>
+        <div class="verdict-score-row">
+          <span class="verdict-score-pct" id="verdict-score-pct"></span>
+          <span class="verdict-score-hedge">manipulation likelihood</span>
+        </div>
+        <div class="verdict-source-row" id="verdict-source-row"></div>
       </div>
-      <div class="score-bar">
-        <div class="score-fill amber" id="score-bar-fill" style="width:0%"></div>
-      </div>
     </div>
 
-    <div class="pillars-section">
-      <h3>Evidence</h3>
-      <div id="pillars"></div>
+    <div class="evidence-section">
+      <p class="evidence-label">Evidence</p>
+      <div id="evidence-list"></div>
     </div>
 
-    <button class="retry-btn" id="analyse-another">← Verify another clip</button>
+    <div class="verdict-actions">
+      <button class="btn-primary" id="check-another-btn">Check another clip</button>
+      <button class="btn-secondary" id="copy-link-btn" hidden>Copy link</button>
+    </div>
   </div>
+
 </main>
 
-<script type="module" src="/src/pages/verify.js"></script>
+<footer>
+  <div class="footer-brand">
+    <svg width="20" height="20" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
+    <span class="footer-wordmark">Skept</span>
+  </div>
+  <span class="footer-copy">© 2026 Skept</span>
+</footer>
+
+<div class="copy-toast" id="copy-toast">Copied</div>
+
+<script type="module" src="/src/verify.js"></script>
 </body>
 </html>
