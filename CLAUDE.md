@@ -5,6 +5,12 @@ Skept is an AI-content detection and video verification platform for short-form 
 
 ---
 
+## Repo location
+
+Local path: C:\Users\charl\OneDrive\Documents\App Development\Skept\Deployment-Skept\Github Repo\Skept-prototype
+
+---
+
 ## Architecture overview
 
 Single-file FastAPI app — all backend logic and frontend HTML live in `main.py`. No separate frontend directory. Edit `main.py` directly for all UI and pipeline changes.
@@ -132,6 +138,83 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 **Railway (prototype):** Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
 **Production stack (not yet built):** Cloudflare Pages + Workers + D1 + R2 + KV. Railway decommissioned at production launch.
+
+---
+
+## Cloudflare Pages
+
+Project name: skept-prototype
+Live domain: skept.co
+Branch: main
+Build command: npm run build
+Root directory: frontend
+Output directory: dist
+Auto-deploys on push to main — no manual deploy needed for frontend changes.
+
+---
+
+## Worker routes (skept.co)
+
+- skept-auth → skept.co/api/auth/*
+- skept-settings → skept.co/api/settings/*
+- skept-stripe-checkout → skept.co/api/billing/*
+- skept-stripe-webhook → skept.co/api/webhooks/stripe
+- skept-revenuecat-webhook → skept.co/api/webhooks/revenuecat
+- skept-verify → skept.co/api/verify/*
+- skept-history → skept.co/api/history/*
+
+---
+
+## Worker deploy commands (run from repo root)
+
+```bash
+npx wrangler@latest deploy --config wrangler-auth.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-verify.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-history.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-settings.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-stripe-checkout.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-stripe-webhook.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-revenuecat-webhook.toml
+```
+
+---
+
+## Secrets
+
+All secrets provisioned via: `npx wrangler@latest secret put <SECRET_NAME> --config <toml file>`
+
+- skept-auth secrets: ENCRYPTION_KEY (32-byte base64), IP_SALT, RESEND_API_KEY
+- skept-settings secrets: ENCRYPTION_KEY (must match skept-auth), IP_SALT
+- skept-stripe-checkout secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_IDS, JWT_SECRET
+- skept-stripe-webhook secrets: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_IDS
+- skept-revenuecat-webhook secrets: RC_HMAC_SECRET
+
+---
+
+## Auth flow
+
+Magic link passwordless auth. Sign-in page at skept.co sets skept_session httpOnly cookie on skept.co domain after token exchange. All API calls use credentials: 'include'. Token endpoint: POST /api/auth/request. Verify endpoint: POST /api/auth/verify. Session check: GET /api/auth/me. Logout: POST /api/auth/logout.
+
+---
+
+## Frontend structure
+
+```
+frontend/
+  index.html          (sign-in)
+  verify.html         (verify flow)
+  history.html        (analysis history)
+  settings.html       (account settings)
+  public/_redirects   (MPA routing for Cloudflare Pages)
+  src/
+    api.js            (all fetch calls, credentials: include, relative /api/* paths)
+    auth.js           (checkAuth — called on load of every protected page)
+    pages/
+      signin.js
+      verify.js
+      history.js
+      settings.js
+```
 
 ---
 
