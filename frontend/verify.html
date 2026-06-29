@@ -70,15 +70,21 @@
     #view-analysing { text-align: center; }
 
     /* ── INTAKE ── */
+    .eyebrow-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
     .eyebrow {
       font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
-      color: var(--amber); text-transform: uppercase; margin-bottom: 14px;
+      color: var(--amber); text-transform: uppercase; white-space: nowrap;
     }
-    .intake-headline {
-      font-size: 32px; font-weight: 600; line-height: 1.2;
-      color: var(--ink); margin-bottom: 10px;
+    .eyebrow-rule { flex: 1; height: 1px; background: var(--amber); }
+    .intake-headline { margin-bottom: 10px; }
+    .headline-italic {
+      font-family: var(--goudy); font-style: italic;
+      font-size: clamp(52px, 6.5vw, 72px); line-height: 1.05; color: var(--amber);
     }
-    .intake-headline em { font-style: italic; color: var(--amber); }
+    .headline-roman {
+      font-family: var(--goudy); font-style: normal;
+      font-size: clamp(52px, 6.5vw, 72px); line-height: 1.05; color: var(--ink);
+    }
     .intake-sub {
       font-size: 15px; color: var(--ink-soft); margin-bottom: 28px; line-height: 1.5;
     }
@@ -111,6 +117,16 @@
     }
     .inline-error { font-size: 13px; color: var(--red-state); margin-top: 10px; display: none; }
     .inline-error.visible { display: block; }
+    .tab-switcher {
+      display: flex; border-bottom: 1px solid var(--rule); margin-bottom: 12px;
+    }
+    .tab-btn {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      padding: 8px 20px 8px 0; margin-bottom: -1px;
+      font-family: var(--ui); font-size: 13px; font-weight: 500;
+      color: var(--ink-softer); cursor: pointer; transition: color 0.15s;
+    }
+    .tab-btn.tab-active { color: var(--ink); border-bottom-color: var(--amber); }
 
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
@@ -227,7 +243,6 @@
       nav    { padding: 0 16px; }
       main   { padding: 32px 16px 64px; }
       footer { padding: 20px 16px; }
-      .intake-headline { font-size: 26px; }
       .verdict-score-pct { font-size: 30px; }
     }
   </style>
@@ -259,13 +274,23 @@
 
   <!-- VIEW 1: INTAKE -->
   <div id="view-intake" class="view-centre">
-    <p class="eyebrow">VERIFY A CLIP</p>
-    <h1 class="intake-headline">Is this clip <em>real?</em> Check it.</h1>
-    <p class="intake-sub">Paste a link from TikTok, Instagram, YouTube, X, or Bluesky.</p>
+    <div class="eyebrow-row">
+      <span class="eyebrow">A SECOND LOOK, BEFORE THE SHARE</span>
+      <div class="eyebrow-rule"></div>
+    </div>
+    <div class="intake-headline">
+      <div class="headline-italic">Look closer</div>
+      <div class="headline-roman">at every clip.</div>
+    </div>
+    <p class="intake-sub">Paste a link or upload a video. Skept analyses metadata, container forensics, and frame-level signals to return an evidence-backed verdict.</p>
+    <div class="tab-switcher">
+      <button class="tab-btn tab-active" id="tab-url">Paste URL</button>
+      <button class="tab-btn" id="tab-upload">Upload file</button>
+    </div>
     <div class="url-row">
       <input type="text" id="url-input" class="url-input"
              placeholder="https://www.tiktok.com/@..." autocomplete="off">
-      <button id="check-btn" class="check-btn">Check it</button>
+      <button id="check-btn" class="check-btn">Analyse</button>
     </div>
     <div class="platform-pills">
       <span class="platform-pill">TikTok</span>
@@ -274,6 +299,8 @@
       <span class="platform-pill">X / Twitter</span>
       <span class="platform-pill">Bluesky</span>
       <span class="platform-pill">Discord CDN</span>
+      <span class="platform-pill">Facebook</span>
+      <span class="platform-pill">Direct file</span>
     </div>
     <p class="inline-error" id="url-error">Please paste a valid video URL.</p>
   </div>
