@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 29 Jun 2026 (session 2)**
+**Last updated: 29 Jun 2026 (session 5)**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -13,7 +13,7 @@ Local path: C:\Users\charl\OneDrive\Documents\App Development\Skept\Deployment-S
 
 ## Architecture overview
 
-Single-file FastAPI app — all backend logic and frontend HTML live in `main.py`. No separate frontend directory. Edit `main.py` directly for all UI and pipeline changes.
+Production stack is Cloudflare-native — Pages (frontend), Workers (API/routing), D1 (user records, analysis history), R2 (clip storage), KV (sessions, auth tokens). Railway prototype (`skept-prototype-production.up.railway.app`) remains live for dev/testing and is being decommissioned at production launch.
 
 **Analysers:**
 - `analysers/deepfake.py` — Resemble AI DETECT-3B Omni (video). Single API call to `/api/v1/detect`. Submits `df_sampled.mp4`. Returns per-frame scores via `video_metrics.children`. Certainty-weighted mean scoring. Also reads embedded audio score from same response (`item["metrics"]["aggregated_score"]`), stored as `video_job_audio_score`.
@@ -108,23 +108,24 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 **Current baselines:** Project Brief v0.24 (29 Jun 2026) · Engineers Brief v0.21 (29 Jun 2026)
 
-| Item | Description |
-|---|---|
-| §3.31 | Trump QID absent — hashtag `#presidentdonaldtrump` not segmented by wordninja; NER returns empty entity list |
-| §3.44 | Audio evidence card body text unverified |
-| §3.45 | No-speech path unverified |
-| §3.50 | (carry forward) |
-| §3.56 | Pillar active count "2/2" on `audio_dubbing_pattern` exclusion path — unverified fix |
-| §3.58 | `ref_53` DOM label renders on non-dubbing-pattern jobs — REOPENED; multiple render sites identified |
-| §3.59 | No-audio-stream vs no-speech copy distinction — unverified |
-| §3.60 | "Audio & voice clone detection" row should appear in Stage 2 GPU Ensemble block in progress screen (Resemble audio is GPU) |
-| §3.62 | Resemble dashboard Audio % vs Skept Audio % divergence — disclosure note in evidence card (low priority) |
-| §3.63 | High-variance per-frame scores not surfaced in verdict UI |
-| §3.66 | URL validation before yt-dlp dispatch |
-| §3.69 | Frame confidence scalar suppresses verdict on text-to-video synthetic content (certainty low on generative content); correct fix is Sightengine reintroduction (§3.20) |
-| §3.70 | Audio `max(raw, 0.0)` formula — clean audio clusters near 0.0 correctly, but pending live data validation across more clip types |
-| §3.72 | `video_job_audio_label` not forwarded from `deepfake.py` to `audio.py` — no scoring impact, one-liner fix pending |
-| §3.76 | Logo SVG colour fix: loupe mark rendering grey in nav on all five surfaces (index.html, history.html, verify.html, settings.html, verdict-worker.js). Fix: set `color: var(--ink)` explicitly on SVG element in nav markup. One-line fix per file. |
+All checklist items resolved. No open items as of 29 Jun 2026 (session 5). Nav/footer standardisation (§3.76 / §3.77) pending Claude Code execution only.
+
+Previously open items now confirmed closed via consolidation checklist:
+- §3.31 — Trump QID / wordninja segmentation: confirmed via Extension (27 Jun)
+- §3.44 — Audio evidence card body text: closed (24 Jun)
+- §3.45 — No-speech path: closed (26 Jun)
+- §3.50 — Cloudflare production stack steps 6–7: step 6 complete (billing Workers live); step 7 (landing page swap) deferred to launch day (29 Jun)
+- §3.56 — Pillar active count on audio_dubbing_pattern path: closed (26 Jun)
+- §3.58 — ref_53 DOM label / dubbing-pattern render: closed (26 Jun)
+- §3.59 — No-audio-stream vs no-speech copy: closed (27 Jun)
+- §3.60 — Audio row in wrong stage block: closed (26 Jun)
+- §3.62 — Audio score divergence disclosure: confirmed stale, fixed commit 49c0fd6 (26 Jun)
+- §3.63 — High-variance flag not surfaced: confirmed in code and EB §3.1 (27 Jun)
+- §3.66 — URL validation before yt-dlp: closed (26 Jun)
+- §3.69 — Certainty scalar suppression evidence card note: closed, deployment 63384a23 (27 Jun)
+- §3.70 — Audio max(raw, 0.0) calibration monitoring: note only, no active action (27 Jun)
+- §3.72 — video_job_audio_label not forwarded: closed (27 Jun)
+- §3.76 — Logo SVG colour fix + nav/footer standardisation: absorbed into full nav standardisation pass; Claude Code prompt issued (29 Jun)
 
 ---
 
@@ -139,8 +140,8 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 ## Deploy
 
-**Railway (prototype):** Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
-**Production stack (not yet built):** Cloudflare Pages + Workers + D1 + R2 + KV. Railway decommissioned at production launch.
+**Cloudflare Pages (production):** Push to `main` → auto-deploy. No manual deploy needed for frontend changes.
+**Railway (prototype):** Push to `main` → auto-deploy. Being decommissioned at production launch.
 
 ---
 
@@ -154,10 +155,11 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
 | Verify Worker | LIVE at skept.co/api/verify/* |
 | Settings Worker | LIVE at skept.co/api/settings/* |
-| verify.html | LIVE at skept.co/verify — intake, analysing, verdict views; wired to /api/verify/* |
+| verify.html | LIVE — intake, analysing, and verdict views wired to /api/verify/* |
 | settings.html | Scaffold only — not yet built |
-| Base template (`cloudflare/templates/skept-base-template.html`) | LIVE — canonical nav/footer shell for all pages |
-| Logo / loupe mark colour in nav | Bug — renders grey, fix pending (§3.76) |
+| Verdict Worker (`skept-verdict`) | LIVE at skept.co/v/* — server-rendered verdict page, four states, 404 state |
+| Base template | `cloudflare/templates/skept-base-template.html` — canonical nav + footer shell, both auth states, account dropdown. All new pages derive from this file. |
+| Nav/footer standardisation | Claude Code prompt issued — pending execution. Applies canonical nav/footer to index.html, verify.html, history.html, settings.html, verdict-worker.js in one commit. Closes §3.76. |
 
 ---
 
@@ -405,7 +407,8 @@ npx wrangler@latest d1 migrations apply skept-auth --remote
 
 ## Working principles
 
-- Edit `main.py` for all pipeline and UI changes.
+- Frontend changes: edit files in `frontend/` and push to main — Pages auto-deploys.
+- Worker changes: edit in `cloudflare/` and deploy with the relevant `wrangler` command.
 - One Resemble API call per job. Never add a second.
 - `score=None` excludes from fusion. Never substitute 0.5 for None.
 - Absence of signal is not evidence of authenticity.
