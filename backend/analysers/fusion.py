@@ -13,9 +13,11 @@ Source Details pillars (run on every job, feed evidence card only — §3.33):
   - Source behaviour:            not in denominator
 
 Verdict bands:
-  Green  0.0 – 0.30   Likely authentic
-  Amber  0.30 – 0.60  Inconclusive
-  Red    0.60 – 1.0   Likely manipulated
+  Green      0.00 – <0.20  Authentic      (band: authentic)
+  LightGreen 0.20 – 0.49   Ambiguous      (band: clean)
+  Amber      exactly 0.50  Inconclusive   (band: ambiguous)
+  Orange     0.51 – 0.79   Suspicious     (band: suspicious)
+  Red        0.80 – 1.00   Manipulated    (band: manipulated)
 
 Scoring model assumption:
   All analyser inputs use a 50-anchored scale: 0.5 = no information (neutral),
@@ -147,28 +149,40 @@ def fuse(
     )
     print(f"[fusion] job score={final_score:.4f} denom={total_weight:.4f} pillars={_pillar_breakdown}", flush=True)
 
-    if final_score < 0.30:
-        band        = "green"
-        label       = "Likely authentic"
+    if final_score < 0.20:
+        band        = "authentic"
+        label       = "Authentic"
         description = (
-            "Skept found no significant indicators of manipulation in this clip. "
-            "Results reflect the submitted copy only - re-encoding may have degraded forensic signals."
+            "No significant manipulation signals found. "
+            "Results reflect the submitted copy only — re-encoding may have degraded forensic signals."
         )
-    elif final_score < 0.60:
-        band        = "amber"
+    elif final_score < 0.50:
+        band        = "clean"
+        label       = "Ambiguous"
+        description = (
+            "Minimal signals detected. The clip leans authentic but some uncertainty remains — "
+            "re-analyse with the original file for stronger signal."
+        )
+    elif final_score == 0.50:
+        band        = "ambiguous"
         label       = "Inconclusive"
         description = (
-            "Skept detected some signals worth noting but cannot confirm manipulation. "
-            "Platform re-encoding typically degrades artifact-level signals - "
-            "a clean result here does not guarantee authenticity."
+            "No signals detected in either direction. The clip could not be verified as authentic "
+            "or manipulated — seek additional sources and editorial judgement."
+        )
+    elif final_score < 0.80:
+        band        = "suspicious"
+        label       = "Suspicious"
+        description = (
+            "Skept detected signals consistent with potential manipulation. "
+            "This does not confirm manipulation — treat as investigative and seek corroborating evidence."
         )
     else:
-        band        = "red"
-        label       = "Likely manipulated"
+        band        = "manipulated"
+        label       = "Manipulated"
         description = (
-            "Skept detected multiple signals consistent with AI manipulation or synthetic generation. "
-            "This verdict is based on the submitted copy and should be treated as investigative, "
-            "not conclusive - re-analyse with the original file for stronger signal."
+            "Skept detected multiple strong signals consistent with AI manipulation or synthetic generation. "
+            "Treat this clip with high suspicion — cross-reference with verified sources and original file."
         )
 
     return {
@@ -196,7 +210,7 @@ def _confidence_label(total_weight: float, scores: dict) -> str:
 
 def _error_verdict(reason: str) -> dict:
     return {
-        "band":            "amber",
+        "band":            "ambiguous",
         "label":           "Inconclusive",
         "score":           0.5,
         "description":     f"Analysis could not be completed: {reason}",
