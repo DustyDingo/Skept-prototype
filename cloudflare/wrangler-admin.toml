@@ -1,0 +1,24 @@
+name = "skept-admin"
+main = "admin-worker.js"
+compatibility_date = "2026-04-27"
+
+[[d1_databases]]
+binding = "SKEPT_AUTH_DB"
+database_name = "skept-auth"
+database_id = "b81343be-4703-4d26-959e-46781843d563"
+
+[[d1_databases]]
+binding = "SKEPT_ANALYSIS_DB"
+database_name = "skept-analysis"
+database_id = "f1c17fe3-fd52-48cb-a22c-f4658918e301"
+
+[[kv_namespaces]]
+binding = "AUTH_SESSIONS"
+id = "acb86bfb713e453ab616053bdbc785f8"
+
+[[routes]]
+pattern = "skept.co/admin*"
+zone_name = "skept.co"
+
+[observability]
+enabled = true
