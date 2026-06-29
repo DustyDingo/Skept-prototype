@@ -10,7 +10,9 @@ function esc(str) {
 
 function fmtDate(unixTs) {
   const d = new Date(unixTs * 1000);
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${day} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
 function truncUrl(url, max = 55) {
@@ -35,32 +37,28 @@ const VERDICT_CONFIG = {
     pill: 'Verified original',
     headline: 'All analysers clean. No manipulation signals found.',
     hedge: 'This is an automated check — interpretation is yours.',
-    footerHedge: 'low manipulation signals',
-    scoreNote: 'Low manipulation probability',
+    footerHedge: 'no manipulation signals found',
   },
   ambiguous: {
     color: '#c07800',
     pill: 'Signs of manipulation',
     headline: 'One or more analysers flagged something. Signals conflict.',
     hedge: 'Mixed confidence. This is a finding of ambiguity, not a verdict of manipulation.',
-    footerHedge: 'mixed signals — interpret with care',
-    scoreNote: null,
+    footerHedge: 'signals conflict',
   },
   suspicious: {
     color: '#c07800',
     pill: 'Signs of manipulation',
     headline: 'One or more analysers flagged something. Signals conflict.',
     hedge: 'Mixed confidence. This is a finding of ambiguity, not a verdict of manipulation.',
-    footerHedge: 'mixed signals — interpret with care',
-    scoreNote: null,
+    footerHedge: 'signals conflict',
   },
   manipulated: {
     color: '#a83a2a',
     pill: 'Strong AI indicators',
     headline: 'Multiple analysers agree. Strong signs of AI generation.',
-    hedge: 'High confidence — not certainty. This is an automated observation. False positives occur. Do not treat this as a finding of fact.',
-    footerHedge: 'strong manipulation indicators',
-    scoreNote: null,
+    hedge: 'High confidence — not certainty. False positives occur. Do not treat this as a finding of fact.',
+    footerHedge: 'false positives occur',
   },
 };
 
@@ -71,7 +69,7 @@ const PILLAR_LABELS = {
 };
 
 function pillarDotColor(d) {
-  if (d.excluded || d.score === null || d.score === undefined) return '#8a8a8a';
+  if (d.excluded_reason || d.score === null || d.score === undefined) return '#8a8a8a';
   if (d.score < 0.30) return '#3a7a50';
   if (d.score < 0.60) return '#c07800';
   return '#a83a2a';
@@ -93,7 +91,7 @@ function pillarDetailText(name, d) {
   return `${pct}% — Strong manipulation signals detected.`;
 }
 
-function renderEvidenceCards(evidenceJson, strongestSignal) {
+function renderEvidenceCards(evidenceJson, strongestSignal, verdictColor) {
   let parsed = null;
   if (evidenceJson) {
     try { parsed = JSON.parse(evidenceJson); } catch { parsed = null; }
@@ -103,7 +101,7 @@ function renderEvidenceCards(evidenceJson, strongestSignal) {
     const label = strongestSignal || 'Analysis result';
     return `
       <div class="evidence-card">
-        <div class="signal-dot" style="background:#8a8a8a"></div>
+        <div class="signal-dot" style="background:${verdictColor}"></div>
         <div><div class="signal-title">${esc(label)}</div></div>
       </div>`;
   }
@@ -125,38 +123,6 @@ function renderEvidenceCards(evidenceJson, strongestSignal) {
   return html;
 }
 
-const SHARED_CSS = `
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --amber:      #b87400;
-      --ink:        #1a1a1a;
-      --ink-soft:   #5a5a5a;
-      --ink-softer: #8a8a8a;
-      --bg:         #faf8f3;
-      --card:       #ffffff;
-      --rule:       #e8e4db;
-      --goudy: 'Sorts Mill Goudy', Georgia, serif;
-      --ui:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    body { font-family: var(--ui); background: var(--bg); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
-    nav {
-      position: sticky; top: 0; z-index: 100;
-      backdrop-filter: saturate(140%) blur(8px);
-      background: rgba(250,248,243,0.92);
-      border-bottom: 1px solid var(--rule);
-      padding: 0 32px; height: 52px;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .nav-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); }
-    .nav-brand .wordmark { font-family: var(--goudy); font-style: italic; font-size: 22px; color: var(--ink); }
-    .nav-link { font-size: 13px; color: var(--ink-soft); text-decoration: none; }
-    .nav-link:hover { color: var(--ink); }
-    footer { border-top: 1px solid var(--rule); background: var(--bg); padding: 20px 32px; }
-    .footer-inner { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-    .footer-brand { display: flex; align-items: center; gap: 7px; }
-    .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink); }
-    @media (max-width: 640px) { nav { padding: 0 16px; } footer { padding: 16px; } }`;
-
 const SHARED_FONTS = `
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -173,6 +139,57 @@ const SKEPT_MARK_SVG = `
   </defs>
 </svg>`;
 
+const SHARED_CSS = `
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --amber:        #b87400;
+      --amber-warm:   #c07800;
+      --amber-soft:   rgba(184,116,0,0.08);
+      --ink:          #1a1a1a;
+      --ink-soft:     #5a5a5a;
+      --ink-softer:   #8a8a8a;
+      --bg:           #faf8f3;
+      --card:         #ffffff;
+      --rule:         #e8e4db;
+      --green:        #3a7a50;
+      --green-light:  #7aaa88;
+      --amber-state:  #c07800;
+      --red-state:    #a83a2a;
+      --goudy: 'Sorts Mill Goudy', Georgia, serif;
+      --ui:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    body { font-family: var(--ui); background: var(--bg); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* NAV */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      backdrop-filter: saturate(140%) blur(8px);
+      background: rgba(250,248,243,0.92);
+      border-bottom: 1px solid var(--rule);
+      padding: 0 32px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); }
+    .nav-brand .wordmark { font-family: var(--goudy); font-style: italic; font-size: 22px; color: var(--ink); }
+    .nav-right { display: flex; align-items: center; gap: 20px; }
+    .nav-link { font-family: var(--ui); font-size: 13px; color: var(--ink-soft); text-decoration: none; }
+    .nav-link:hover { color: var(--ink); }
+
+    /* FOOTER */
+    footer {
+      border-top: 1px solid var(--rule); background: var(--bg);
+      padding: 24px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 7px; }
+    .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink); }
+    .footer-copy { font-size: 12px; color: var(--ink-softer); }
+
+    @media (max-width: 640px) {
+      nav { padding: 0 16px; }
+      footer { padding: 20px 16px; }
+    }`;
+
 function renderSharedNav() {
   return `
 <nav>
@@ -180,12 +197,24 @@ function renderSharedNav() {
     <svg width="28" height="28" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
     <span class="wordmark">Skept</span>
   </a>
-  <a class="nav-link" href="https://skept.co/how-it-works">What is this?</a>
+  <div class="nav-right">
+    <a class="nav-link" href="/how-it-works">How it works</a>
+  </div>
 </nav>`;
 }
 
-function render404(msg) {
-  const message = msg || 'This result link is invalid or has expired.';
+function renderSharedFooter() {
+  return `
+<footer>
+  <div class="footer-brand">
+    <svg width="20" height="20" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
+    <span class="footer-wordmark">Skept</span>
+  </div>
+  <span class="footer-copy">© 2026 Skept</span>
+</footer>`;
+}
+
+function render404() {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -199,7 +228,6 @@ function render404(msg) {
     .not-found-sub { font-size: 14px; color: var(--ink-soft); margin-bottom: 24px; }
     .home-link { font-size: 14px; color: var(--amber); text-decoration: none; }
     .home-link:hover { text-decoration: underline; }
-    .footer-copy { font-size: 12px; color: var(--ink-softer); }
   </style>
 </head>
 <body>
@@ -208,20 +236,12 @@ ${renderSharedNav()}
 <main>
   <div class="not-found-inner">
     <svg width="40" height="40" style="color:#8a8a8a"><use href="#skept-mark" style="color:#8a8a8a"/></svg>
-    <h1 class="not-found-heading">Result not found</h1>
-    <p class="not-found-sub">${esc(message)}</p>
+    <h1 class="not-found-heading">This result couldn't be found.</h1>
+    <p class="not-found-sub">It may have expired or the link may be incorrect.</p>
     <a href="https://skept.co" class="home-link">← Back to Skept</a>
   </div>
 </main>
-<footer>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <svg width="18" height="18" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
-      <span class="footer-wordmark">Skept</span>
-    </div>
-    <span class="footer-copy">© 2026 Skept</span>
-  </div>
-</footer>
+${renderSharedFooter()}
 </body>
 </html>`;
 }
@@ -229,13 +249,11 @@ ${renderSharedNav()}
 function renderVerdictPage(row, permalinkId) {
   const vc = VERDICT_CONFIG[row.verdict_state] || VERDICT_CONFIG.ambiguous;
   const scorePct = (row.score !== null && row.score !== undefined) ? Math.round(row.score * 100) : null;
-  const thumbPct = scorePct !== null ? Math.max(2, Math.min(98, scorePct)) : 50;
   const scoreDisplay = scorePct !== null ? `${scorePct}%` : '—';
-  const scoreNote = (row.verdict_state === 'authentic' && scorePct !== null) ? vc.scoreNote : null;
   const dateStr = fmtDate(row.created_at);
   const platform = platformLabel(row.platform);
   const clipUrlShort = truncUrl(row.clip_url);
-  const evidenceHtml = renderEvidenceCards(row.evidence_json, row.strongest_signal);
+  const evidenceHtml = renderEvidenceCards(row.evidence_json, row.strongest_signal, vc.color);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -246,12 +264,21 @@ function renderVerdictPage(row, permalinkId) {
   <meta name="robots" content="noindex">${SHARED_FONTS}
   <style>${SHARED_CSS}
 
-    /* HERO */
-    .hero-wrapper { background: var(--card); border-bottom: 1px solid var(--rule); }
-    .verdict-band-strip { height: 6px; width: 100%; }
-    .hero-body { max-width: 1080px; margin: 0 auto; padding: 40px 32px 48px; }
+    /* MAIN CONTENT */
+    main {
+      flex: 1; max-width: 560px; margin: 0 auto;
+      padding: 40px 32px 80px; width: 100%;
+    }
 
-    .mark-pill-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    /* HERO CARD */
+    .hero-card {
+      background: var(--card); border: 1px solid var(--rule);
+      border-radius: 8px; overflow: hidden;
+    }
+    .verdict-band { height: 6px; width: 100%; }
+    .hero-body { padding: 24px; }
+
+    .mark-pill-row { display: flex; align-items: center; gap: 12px; }
     .verdict-pill {
       display: inline-flex; align-items: center;
       padding: 5px 14px; border-radius: 20px;
@@ -259,55 +286,28 @@ function renderVerdictPage(row, permalinkId) {
       letter-spacing: 0.01em;
     }
     .hero-headline {
-      font-family: var(--goudy); font-style: italic;
-      font-size: 28px; line-height: 1.35; color: var(--ink);
-      margin-bottom: 28px; max-width: 640px;
+      font-size: 20px; font-weight: 600; line-height: 1.4;
+      color: var(--ink); margin-top: 14px;
     }
 
-    /* HEDGE PANEL */
-    .hedge-panel { margin-bottom: 28px; }
-    .score-display { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
-    .score-large { font-size: 52px; font-weight: 300; line-height: 1; color: var(--ink); }
-    .score-sub { font-size: 13px; color: var(--ink-softer); }
-
-    .meter-wrapper { margin-bottom: 12px; }
-    .meter-track {
-      position: relative; height: 6px; border-radius: 3px;
-      background: linear-gradient(to right, #3a7a50 0%, #3a7a50 30%, #c07800 30%, #c07800 60%, #a83a2a 60%, #a83a2a 100%);
-      margin-bottom: 8px;
+    /* CONFIDENCE-HEDGE PANEL */
+    .hedge-panel {
+      margin-top: 12px;
+      display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
     }
-    .meter-thumb {
-      position: absolute; width: 14px; height: 14px;
-      background: var(--ink); border: 2px solid white;
-      border-radius: 50%; top: -4px;
-      transform: translateX(-50%);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.20);
-    }
-    .meter-labels {
-      display: flex; justify-content: space-between;
-      font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
-      color: var(--ink-softer); text-transform: uppercase;
-    }
-    .hedge-copy { font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+    .score-large { font-size: 36px; font-weight: 300; line-height: 1; }
+    .hedge-copy { font-size: 13px; color: var(--ink-soft); line-height: 1.5; flex: 1; min-width: 160px; }
 
     /* CLIP META */
-    .clip-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .meta-platform {
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.09em; color: var(--ink-softer);
+    .clip-meta {
+      margin-top: 16px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      font-size: 12px; color: var(--ink-softer);
     }
     .meta-sep { color: var(--rule); }
-    .meta-url { font-size: 12px; color: var(--ink-softer); word-break: break-all; }
-
-    /* MAIN */
-    main { flex: 1; max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; width: 100%; }
-    .section-label {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
-      color: var(--ink-softer); margin-bottom: 14px;
-      padding-bottom: 8px; border-bottom: 1px solid var(--rule);
-    }
 
     /* EVIDENCE CARDS */
+    .evidence-section { margin-top: 16px; }
     .evidence-card {
       display: flex; align-items: flex-start; gap: 14px;
       background: var(--card); border: 1px solid var(--rule);
@@ -319,23 +319,34 @@ function renderVerdictPage(row, permalinkId) {
 
     /* CONTEXT CARD */
     .context-card {
+      margin-top: 16px;
       background: var(--card); border: 1px solid var(--rule);
-      border-radius: 6px; padding: 18px 20px; margin-top: 20px;
+      border-radius: 6px; padding: 18px 20px;
+      display: flex; align-items: flex-start; gap: 14px;
+      text-decoration: none; color: inherit;
     }
-    .context-link { font-size: 14px; color: var(--amber); text-decoration: none; }
-    .context-link:hover { text-decoration: underline; }
+    .context-card:hover { border-color: var(--ink-softer); }
+    .context-icon {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--amber-soft); border: 1px solid rgba(184,116,0,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: var(--amber);
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .context-title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+    .context-sub { font-size: 13px; color: var(--ink-soft); }
 
     /* CTA BLOCK */
     .cta-block {
-      margin-top: 40px; padding: 36px 32px;
+      margin-top: 16px; padding: 32px 24px;
       background: var(--card); border: 1px solid var(--rule);
       border-radius: 8px; text-align: center;
     }
     .cta-heading {
       font-family: var(--goudy); font-style: italic;
-      font-size: 24px; color: var(--ink); margin-bottom: 8px;
+      font-size: 22px; color: var(--ink); margin-bottom: 8px;
     }
-    .cta-sub { font-size: 14px; color: var(--ink-soft); margin-bottom: 22px; }
+    .cta-sub { font-size: 14px; color: var(--ink-soft); margin-bottom: 20px; }
     .cta-btn {
       display: inline-block; padding: 12px 28px;
       background: var(--ink); color: white; border-radius: 6px;
@@ -344,15 +355,19 @@ function renderVerdictPage(row, permalinkId) {
     }
     .cta-btn:hover { opacity: 0.85; }
 
-    /* FOOTER */
-    .footer-disclaimer { font-size: 12px; color: var(--ink-softer); }
+    /* FOOTER DISCLAIMER */
+    .footer-disclaimer {
+      margin-top: 24px;
+      font-size: 11px; color: var(--ink-softer);
+      text-align: center; line-height: 1.6;
+    }
 
     @media (max-width: 640px) {
-      .hero-body { padding: 28px 16px 36px; }
       main { padding: 32px 16px 64px; }
-      .hero-headline { font-size: 22px; }
-      .score-large { font-size: 40px; }
-      .cta-block { padding: 28px 20px; }
+      .hero-body { padding: 20px 16px; }
+      .hero-headline { font-size: 18px; }
+      .score-large { font-size: 28px; }
+      .cta-block { padding: 24px 16px; }
     }
   </style>
 </head>
@@ -360,60 +375,48 @@ function renderVerdictPage(row, permalinkId) {
 ${SKEPT_MARK_SVG}
 ${renderSharedNav()}
 
-<div class="hero-wrapper">
-  <div class="verdict-band-strip" style="background:${vc.color}"></div>
-  <div class="hero-body">
-    <div class="mark-pill-row">
-      <svg width="32" height="32" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
-      <span class="verdict-pill" style="background:${vc.color}">${esc(vc.pill)}</span>
-    </div>
-    <h1 class="hero-headline">${esc(vc.headline)}</h1>
-    <div class="hedge-panel">
-      <div class="score-display">
-        <span class="score-large">${scoreDisplay}</span>
-        ${scoreNote ? `<span class="score-sub">${esc(scoreNote)}</span>` : ''}
-      </div>
-      <div class="meter-wrapper">
-        <div class="meter-track">
-          <div class="meter-thumb" style="left:${thumbPct}%"></div>
-        </div>
-        <div class="meter-labels">
-          <span>Authentic</span>
-          <span>Inconclusive</span>
-          <span>Suspicious</span>
-        </div>
-      </div>
-      <p class="hedge-copy">${esc(vc.hedge)}</p>
-    </div>
-    <div class="clip-meta">
-      <span class="meta-platform">${esc(platform)}</span>
-      ${row.clip_url ? `<span class="meta-sep">·</span><span class="meta-url">${esc(clipUrlShort)}</span>` : ''}
-    </div>
-  </div>
-</div>
-
 <main>
-  <div class="section-label">Evidence</div>
-  ${evidenceHtml}
-  <div class="context-card">
-    <a href="https://skept.co/how-it-works" class="context-link">What is this? How does Skept work? →</a>
+  <div class="hero-card">
+    <div class="verdict-band" style="background:${vc.color}"></div>
+    <div class="hero-body">
+      <div class="mark-pill-row">
+        <svg width="28" height="28" style="color:${vc.color}"><use href="#skept-mark" style="color:${vc.color}"/></svg>
+        <span class="verdict-pill" style="background:${vc.color}">${esc(vc.pill)}</span>
+      </div>
+      <h1 class="hero-headline">${esc(vc.headline)}</h1>
+      <div class="hedge-panel">
+        <span class="score-large" style="color:${vc.color}">${scoreDisplay}</span>
+        <p class="hedge-copy">${esc(vc.hedge)}</p>
+      </div>
+      <div class="clip-meta">
+        <span>${esc(platform)}</span>
+        ${row.clip_url ? `<span class="meta-sep">·</span><span>${esc(clipUrlShort)}</span>` : ''}
+      </div>
+    </div>
   </div>
+
+  <div class="evidence-section">
+    ${evidenceHtml}
+  </div>
+
+  <a href="/how-it-works" class="context-card">
+    <div class="context-icon">?</div>
+    <div>
+      <div class="context-title">What is this? How does Skept work?</div>
+      <div class="context-sub">About automated video analysis</div>
+    </div>
+  </a>
+
   <div class="cta-block">
     <div class="cta-heading">Analyse a clip yourself</div>
     <p class="cta-sub">Free to use. Check any short-form video before you share it.</p>
     <a href="https://skept.co" class="cta-btn">Get Skept</a>
   </div>
+
+  <p class="footer-disclaimer">Automated analysis · may be incorrect · ${esc(vc.footerHedge)} · skept.co/v/${esc(permalinkId)} · ${esc(dateStr)}</p>
 </main>
 
-<footer>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <svg width="18" height="18" style="color:#1a1a1a"><use href="#skept-mark" style="color:#1a1a1a"/></svg>
-      <span class="footer-wordmark">Skept</span>
-    </div>
-    <span class="footer-disclaimer">Automated analysis · may be incorrect · ${esc(vc.footerHedge)} · skept.co/v/${esc(permalinkId)} · ${esc(dateStr)}</span>
-  </div>
-</footer>
+${renderSharedFooter()}
 </body>
 </html>`;
 }
@@ -453,7 +456,7 @@ export default {
       });
     } catch (err) {
       console.error('[verdict-worker] error:', err.message);
-      return new Response(render404('An error occurred. Please try again.'), {
+      return new Response(render404(), {
         status: 500,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
