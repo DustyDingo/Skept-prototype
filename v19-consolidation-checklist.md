@@ -24,6 +24,7 @@ Living document tracking what's been decided, what's pending, and what needs fol
 | skept-public-verdict-page.html | 🟢 Live specimen | Verdict page anatomy — referenced from project brief §16.10. |
 | skept-how-it-works.html | 🟢 Live specimen | Public explainer page — referenced from project brief §16.10. |
 | skept-analysis-history-ui.html | 🟢 Live specimen | History UI — referenced from project brief §9. |
+| skept-base-template.html | 🟢 Live template | Canonical nav + footer shell. All pages derive from this file. Committed to `cloudflare/templates/skept-base-template.html`. Never modify directly — copy-then-edit. |
 | skept-account-settings.html | 🟡 New specimen (30 Apr) | Account settings screen prototype. Six sections: Profile, Security, Notifications, Subscription, Theme, Privacy & data. Spec in engineers_brief §4.11. |
 | skept-landing.html | 🟡 New specimen (29 Apr) | Coming-soon landing page with waitlist form. Not yet deployed as production entry point. |
 | skept-verify-flow.html | 🟡 New specimen (29 Apr) | Free-tier verify flow prototype. |
@@ -118,12 +119,27 @@ Items fully closed and filed in their respective briefs. Detail is in the brief 
 | §3.62 Audio score normalisation disclosure | 27 Jun 2026 (confirmed stale) | Fixed in commit `49c0fd6` (26 Jun); verified in batch session same day. Checklist carried as open in error. No action required. |
 | §3.21 + §3.27 Subject identity — EB spec section | 29 Jun 2026 | EB v0.21 §3.9 (new section: spaCy NER, Wikidata list, wordninja hashtag pre-processing, evidence card copy, Phase 1 limitation, Phase 2 face recognition gate); EB v0.21 §4.4 (Source Details table row added); EB v0.21 §13 (backlog item → confirmed live). |
 | §3.50 Cloudflare production stack — steps 6–7 | 29 Jun 2026 | Step 6 complete: Stripe dashboard (4 subscription products, 3 top-up one-time products, webhook registered), RevenueCat (4 entitlements, 11 Test Store products, HMAC webhook), 3 Workers deployed (skept-stripe-checkout, skept-stripe-webhook, skept-revenuecat-webhook), D1 migrations confirmed, all secrets provisioned. Step 7 (landing page swap) deferred to launch day. |
+| §3.76 (partial) Verdict page Worker + verify page build | 29 Jun 2026 | skept-verdict Worker deployed; route skept.co/v/* registered; 404 state confirmed. frontend/verify.html fully built — intake (prototype copy + headline), analysing, verdict views wired to /api/verify/*. frontend/src/verify.js created. Logo SVG colour fix remains open (§3.76). |
 
 ---
 
 ## 3. Open items
 
-No open items. All consolidation checklist items closed as of 29 Jun 2026.
+### Planning note — Trust Seal feature scope (29 Jun 2026)
+
+Full seal feature complexity reviewed against current production state. No new decisions or doc gaps identified — PB §16 is fully current. Next active build tasks (Phase 2):
+- One-tap share action UX (seal asset + permalink, single action)
+- Plus tier seal gating
+- Perceptual hash + first-frame thumbnail on verdict page (§16.5)
+- C2PA manifest embedding (originator watermarking Phase 1 bridge)
+
+Invisible watermark layer (Meta WAM / SteganoGAN) remains Phase 2 — separate project gate.
+
+---
+
+### 🔴 §3.76 — Logo SVG colour fix
+
+Loupe mark rendering grey in nav across all frontend pages (index.html, history.html, verify.html, settings.html) and on the verdict Worker page — SVG `color` property not resolving to `#1a1a1a` (ink) in the nav context. Fix: set `color: var(--ink)` explicitly on the SVG element in nav markup. One-line fix per file; affects all five surfaces.
 
 ---
 
@@ -157,3 +173,17 @@ No open items. All consolidation checklist items closed as of 29 Jun 2026.
 | CLOUDFLARE_WORKER.md | v0.1 | 29 Apr 2026 | No planned revision |
 | skept_advisor_script_v1_4.docx | v1.4 | 30 Apr 2026 | No planned revision |
 | skept-pricing-summary-v2_2.md | v2.2 | 28 Jun 2026 | Update on any pricing change — authoritative source, always read before citing numbers |
+| frontend/history.html | v1.0 | 29 Jun 2026 | Next UX iteration after verify page live and real entries render |
+| frontend/verify.html | v1.0 | 29 Jun 2026 | Next UX iteration after end-to-end verify flow confirmed working |
+| cloudflare/verdict-worker.js | v1.0 | 29 Jun 2026 | Iterate on evidence card rendering once real evidence_json shape confirmed |
+| cloudflare/templates/skept-base-template.html | v1.0 | 29 Jun 2026 | Update when nav structure changes (new links, avatar upgrade, dark mode) |
+
+---
+
+## Admin interface
+
+- [ ] Add `is_admin INTEGER NOT NULL DEFAULT 0` column to users table — skept-auth D1 (wrangler d1 execute --remote)
+- [ ] Build `skept-admin` Worker: bindings skept-auth D1 (read) + skept-analysis D1 (read); auth via ADMIN_TOKEN secret (Bearer)
+- [ ] Implement admin API endpoints: GET /jobs, GET /jobs/:id, GET /stats/verdicts, GET /stats/signals, GET /stats/cost, GET /users, PATCH /users/:id/tier
+- [ ] Wire skept-admin-dashboard.html to live API (replace static JOBS object with fetch calls to /api/admin/jobs/:id)
+- [ ] Deploy: skept.co/admin/* → skept-admin Worker route in Cloudflare

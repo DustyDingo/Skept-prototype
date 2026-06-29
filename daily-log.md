@@ -2,6 +2,153 @@
 
 ---
 
+## 2026-06-29 (Session 2 continued)
+
+### Admin interface — architecture decision + HTML spec
+
+- Decided against adding `admin` as a tier. Conflates billing tier (quota/feature gating) with operator role (internal tooling). Orthogonal concerns — a future admin may be on any billing tier.
+- Approach: `is_admin INTEGER NOT NULL DEFAULT 0` boolean column on users table in skept-auth D1. Tier enforcement logic unchanged.
+- Auth: static `ADMIN_TOKEN` Worker secret (Bearer header) for initial solo use. `is_admin` DB gate added when multi-user access needed.
+- `skept-admin` Worker at `skept.co/admin/*`. JWT → user_id → `is_admin = 1` check. 403 if not admin. Reuses existing magic link auth — no new auth infrastructure.
+- Admin API endpoints designed:
+  - GET /api/admin/jobs — paginated job list with summary cols
+  - GET /api/admin/jobs/:id — full job detail incl. evidence_json
+  - GET /api/admin/stats/verdicts — verdict distribution, date range param
+  - GET /api/admin/stats/signals — per-pillar score distributions
+  - GET /api/admin/stats/cost — estimated Resemble spend by period
+  - GET /api/admin/users — user list, tier, quota usage
+  - PATCH /api/admin/users/:id/tier — manual tier override
+- HTML spec produced: skept-admin-dashboard.html — 5 views: Dashboard (8 stat cards, verdict dist, platform split, recent jobs), Job log (filterable table with video/audio scores, flags, trim indicator), Signal stats (score bucket histograms, certainty scalar dist, asymmetric exclusion breakdown, per-platform score floor), API cost (Resemble spend breakdown by tier), Users + Founder cohort + Config.
+- Job detail drawer: per-job pillar cards with certainty scalar fill bar + per-frame sparkline, full fusion calculation rendered as readable formula, C2PA status, conflict flags. Dubbing exclusion case fully wired (greyed pillar card, collapsed denominator display).
+- Spec file ready to hand to Claude Code once skept-admin Worker is built.
+
+---
+
+## 29 Jun 2026 — Trust Seal feature scope reviewed; difficulty assessed
+
+**Session type:** Planning — seal feature complexity assessment, phasing confirmation.
+
+---
+
+**Outcome:**
+
+Trust Seal architecture reviewed against current production state. Feature is already deeply specced in PB §16; no new decisions required. Summary of difficulty tiers established:
+
+**Low effort (seal backbone already live):**
+- Public verdict page (`skept.co/v/[UUID]`) deployed and working — verdict record lookup, server-rendered page, 404 state confirmed.
+- `skept-analysis` D1 already stores everything the seal page needs.
+- Four colour states (solid green, light green, amber, red) locked in brand tokens and spec.
+
+**Medium effort — Phase 2 (seal generation UX):**
+- One-tap share action: seal asset (PNG/SVG in verdict colour) + permalink to clipboard simultaneously. "One action not three" constraint is the binding UX requirement.
+- iOS Share Extension already serves verify ingestion — same mechanism handles seal share-out.
+- Tier gating: Plus and above generate seals; Free/Lite cannot surface permalink URL in app.
+- Perceptual hash + first-frame thumbnail on verdict page (anti-spoofing §16.5).
+- Model drift notice ("produced by model vX — re-analyse?") — small, important.
+
+**Hard — Phase 2 (watermarking):**
+- C2PA manifest embedding in output video — `c2pa-python` in verify pipeline. Non-trivial. Bridge standard for Phase 1 originator watermarking.
+- Invisible forensic watermark surviving platform re-encoding (Meta WAM / SteganoGAN benchmarking) — correctly scoped to Phase 2. Treat as separate project.
+
+**Critical path to seal MVP:** Plus tier gating → one-tap share UX → seal asset generation → verdict page perceptual hash + thumbnail. Estimated: one focused week of dev once iOS build is unblocked.
+
+**No new checklist items opened.** Phasing confirmed as already documented in PB §16.7. No doc updates required — existing brief fully covers scope.
+
+**Next action proposed:** Spec the share-flow UX or the seal asset generation (PNG/SVG generation per verdict colour state).
+
+**Open items at session close:** §3.76 (logo SVG colour fix)
+**Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
+
+---
+
+## 29 Jun 2026 — Base template established; nav/footer shell locked
+
+**Session type:** UI design — canonical base template, nav pattern decision.
+
+---
+
+**Decisions locked:**
+
+- Nav link order (left → right): How it works · Check a video · History · Account ▾
+- "How it works" sits leftmost in the link group — most marketing-oriented, targets first-time users
+- Sign out moved inside Account dropdown (not top-level nav link)
+- Account dropdown for web (not avatar/initials — deferred to app build when initials avatar introduced)
+- Unauthenticated nav state: How it works · Sign in (Sign in gets bordered button treatment)
+- `data-auth="true|false"` on `<body>` controls nav state switching — single template covers both states
+- Footer: loupe mark + *Skept* wordmark left, © 2026 Skept right
+- `cloudflare/templates/` directory established as canonical home for base template in repo
+- All future pages copy from `cloudflare/templates/skept-base-template.html` — original never modified directly
+- Active page highlighted via `active` class on the relevant `.nav-link` (set per-page)
+
+**Deliverables:**
+
+- `cloudflare/templates/skept-base-template.html` — canonical nav + footer shell, both auth states, account dropdown with Settings / Sign out, dropdown closes on outside click / Escape key, demo toggle included (remove in production pages)
+- Claude Code prompt produced to create `cloudflare/templates/` directory and commit the file
+
+**Open items at session close:** None from this session. §3.76 (logo SVG colour fix) remains the only open checklist item.
+
+**Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
+
+---
+
+## 29 Jun 2026 — Verdict page Worker live; verify page fully built
+
+**Session type:** Cloudflare Pages frontend build — verdict page Worker, verify page, route registration.
+
+---
+
+**Verdict page Worker (skept-verdict) — COMPLETE:**
+
+- `cloudflare/verdict-worker.js` created: single route `GET /v/:id`, queries `skept-analysis` D1 by `permalink_uuid`, server-renders full HTML page (no auth required).
+- Implements full verdict anatomy from `skept-public-verdict-page.html` spec: hero block (6px colour band, loupe mark, state pill, headline, confidence-hedge panel, clip meta), evidence cards from `evidence_json`, context link, acquisition CTA, footer disclaimer.
+- 404 state: cream shell, "This result couldn't be found." + "← Back to Skept" link.
+- `cloudflare/wrangler-verdict.toml` created. Worker deployed as `skept-verdict`.
+- Route `skept.co/v/*` registered in Cloudflare dashboard (via Chrome Extension). Confirmed working: `skept.co/v/test` returns correct 404 state. Commit bb953be.
+- Cache-Control: `public, max-age=3600` on 200 responses.
+
+**Verify page (§3.76 partial) — COMPLETE:**
+
+- `frontend/verify.html` rebuilt from scaffold: cream shell matching `frontend/history.html`, three view states (intake → analysing → verdict), wired to `/api/verify/*` Worker.
+- `frontend/src/verify.js` created: auth guard (checkAuth → redirect to `/` if no session), `startAnalysis(url)` → POST `/api/verify/submit` → poll GET `/api/verify/status/:job_id` every 2s (max 30 attempts) → render verdict or error.
+- Intake view: "A SECOND LOOK, BEFORE THE SHARE" eyebrow + rule, "Look closer / at every clip." two-line Sorts Mill Goudy headline, descriptor subtext, Paste URL / Upload file tab switcher (Upload file inert — Phase 2), URL input with amber focus ring, "Analyse" button, platform pills (TikTok · Instagram · YouTube Shorts · X / Twitter · Bluesky · Discord CDN · Facebook · Direct file).
+- Verdict view: hero card (colour band + mark + pill + headline + score% + hedge copy), evidence cards from `evidence_json`, "Check another clip" reset button, permalink copy button (if `permalink_uuid` present).
+- Pages pushed to main; auto-deployed.
+
+**Open items at session close:** §3.76 logo SVG colour fix (grey loupe in nav — SVG color inheritance not resolving to ink on all five surfaces: index, history, verify, settings, verdict Worker)
+**Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
+
+---
+
+## 29 Jun 2026 — History page live; cream shell established for all interior pages
+
+**Session type:** Cloudflare Pages frontend build — history page, logo fix, shell design decision.
+
+---
+
+**Design decisions locked:**
+
+- **Interior page shell:** all authenticated pages (history, verify, settings) use the cream shell from `skept-landing.html` — `#faf8f3` bg, amber `#b87400` accents, frosted-glass sticky nav, Sorts Mill Goudy italic wordmark, Inter body. Dark app UI from the history specimen was correct for mobile mockups only; dropped for web.
+- **Landing page approach:** Option B confirmed — thin above-fold pitch (logo + tagline + CTA) before sign-in gate. Full marketing page deferred until product loop is working end-to-end and real output can be screenshotted. `skept-how-it-works.html` specimen retained for when ready.
+- **Mandatory sign-in from day one:** confirmed. No unauthenticated access to any product page. Auth guard on all interior pages redirects to `/` if no valid session. Per-user quota tracking is the enforcement mechanism; per-IP rate limiting alone is too easily bypassed.
+
+**History page (§3.76) — COMPLETE:**
+
+- `cloudflare/history-worker.js` updated: GET /list now returns `{ quota_used, quota_limit, entries }`. Quota fetch non-fatal — defaults to 0/5 if no quota_usage row exists.
+- `frontend/history.html` rebuilt: cream shell, sticky nav (loupe + wordmark + "Check a video" / "History" active / Sign out), quota strip with progress bar, filter chips (All / Suspicious / Ambiguous / Authentic — client-side), history card list, loading skeletons, amber error banner, empty state.
+- `frontend/src/history.js` new file: checkAuth → fetch /api/history/list → render quota strip → render cards. Delete flow with inline confirmation, 403 sealed-entry guard, fade-out on success.
+- History Worker redeployed; Pages pushed to main and deployed.
+- 500 on initial load fixed (quota query throwing on missing row — wrapped non-fatal).
+
+**Logo SVG fix (partial):**
+
+- Double-circle bezel ring removed across all four frontend pages (index, history, verify, settings).
+- Remaining issue: loupe mark rendering grey instead of solid `#1a1a1a` — SVG `color` inheritance not resolving to ink value in nav context. Fix deferred to next session (one-line CSS correction).
+
+**Open items at session close:** §3.76 logo colour fix (grey loupe in nav — SVG color inheritance); verify page (frontend/verify.html scaffold needs full build — next session)
+**Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
+
+---
+
 ## 29 Jun 2026 — EB v0.21 and PB v0.24 complete; all checklist items closed
 
 **Session type:** Document build — both primary briefs rebuilt. Consolidation checklist cleared.
