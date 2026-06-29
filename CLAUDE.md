@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 29 Jun 2026**
+**Last updated: 29 Jun 2026 (session 2)**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -125,8 +125,6 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.70 | Audio `max(raw, 0.0)` formula — clean audio clusters near 0.0 correctly, but pending live data validation across more clip types |
 | §3.72 | `video_job_audio_label` not forwarded from `deepfake.py` to `audio.py` — no scoring impact, one-liner fix pending |
 | §3.76 | Logo SVG colour fix: loupe mark rendering grey in nav on all five surfaces (index.html, history.html, verify.html, settings.html, verdict-worker.js). Fix: set `color: var(--ink)` explicitly on SVG element in nav markup. One-line fix per file. |
-| §3.77 | verify.html: scaffold only — full build pending (next priority after logo fix) |
-| §3.78 | settings.html: scaffold only — not yet built |
 
 ---
 
@@ -154,10 +152,11 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | History page (`history.html`) | LIVE at skept.co/history — cream shell, quota strip, filter chips, card list, delete flow |
 | History Worker | LIVE at skept.co/api/history/* |
 | Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
-| Verify Worker | LIVE at skept.co/api/verify/* — backend complete, frontend scaffold only |
+| Verify Worker | LIVE at skept.co/api/verify/* |
 | Settings Worker | LIVE at skept.co/api/settings/* |
-| verify.html | Scaffold only — not yet built |
+| verify.html | LIVE at skept.co/verify — intake, analysing, verdict views; wired to /api/verify/* |
 | settings.html | Scaffold only — not yet built |
+| Base template (`cloudflare/templates/skept-base-template.html`) | LIVE — canonical nav/footer shell for all pages |
 | Logo / loupe mark colour in nav | Bug — renders grey, fix pending (§3.76) |
 
 ---
@@ -237,6 +236,10 @@ frontend/
       signin.js
       verify.js
       settings.js
+
+cloudflare/
+  templates/
+    skept-base-template.html  — canonical nav/footer shell; copy for new pages; set data-auth="true|false" on <body>
 ```
 
 ---
@@ -256,6 +259,11 @@ frontend/
 **CSS custom properties:**
 `--amber: #b87400` · `--ink: #1a1a1a` · `--ink-soft: #5a5a5a` · `--ink-softer: #8a8a8a` · `--bg: #faf8f3` · `--card: #ffffff` · `--rule: #e8e4db` · `--green: #3a7a50` · `--green-light: #7aaa88` · `--red-state: #a83a2a`
 Display font: Sorts Mill Goudy (wordmark only, italic). Body: Inter.
+
+**Base template:** `cloudflare/templates/skept-base-template.html` — canonical nav/footer shell. Copy for each new page; do not edit the template directly.
+
+**Nav link order (auth):** How it works · Check a video · History · Account ▾
+**Nav link order (unauth):** How it works · Sign in
 
 ---
 
