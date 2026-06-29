@@ -124,7 +124,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.69 | Frame confidence scalar suppresses verdict on text-to-video synthetic content (certainty low on generative content); correct fix is Sightengine reintroduction (§3.20) |
 | §3.70 | Audio `max(raw, 0.0)` formula — clean audio clusters near 0.0 correctly, but pending live data validation across more clip types |
 | §3.72 | `video_job_audio_label` not forwarded from `deepfake.py` to `audio.py` — no scoring impact, one-liner fix pending |
-| §3.76 | Logo colour: loupe mark renders grey in nav — SVG color not resolving to `#1a1a1a`. Fix: set `color: #1a1a1a` explicitly on SVG use element in nav markup. Affects all four frontend pages. |
+| §3.76 | Logo colour: loupe mark renders grey in nav — FIXED in `history.html` (explicit `color:#1a1a1a` on SVG and `<use>` element; `var(--ink)` does not cascade reliably through `<use>` shadow tree). Apply same fix when nav is added to other pages. |
 | §3.77 | verify.html: scaffold only — full build pending (next priority after logo fix) |
 | §3.78 | settings.html: scaffold only — not yet built |
 
