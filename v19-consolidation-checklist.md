@@ -120,26 +120,47 @@ Items fully closed and filed in their respective briefs. Detail is in the brief 
 | §3.21 + §3.27 Subject identity — EB spec section | 29 Jun 2026 | EB v0.21 §3.9 (new section: spaCy NER, Wikidata list, wordninja hashtag pre-processing, evidence card copy, Phase 1 limitation, Phase 2 face recognition gate); EB v0.21 §4.4 (Source Details table row added); EB v0.21 §13 (backlog item → confirmed live). |
 | §3.50 Cloudflare production stack — steps 6–7 | 29 Jun 2026 | Step 6 complete: Stripe dashboard (4 subscription products, 3 top-up one-time products, webhook registered), RevenueCat (4 entitlements, 11 Test Store products, HMAC webhook), 3 Workers deployed (skept-stripe-checkout, skept-stripe-webhook, skept-revenuecat-webhook), D1 migrations confirmed, all secrets provisioned. Step 7 (landing page swap) deferred to launch day. |
 | §3.76 (partial) Verdict page Worker + verify page build | 29 Jun 2026 | skept-verdict Worker deployed; route skept.co/v/* registered; 404 state confirmed. frontend/verify.html fully built — intake (prototype copy + headline), analysing, verdict views wired to /api/verify/*. frontend/src/verify.js created. Logo SVG colour fix remains open (§3.76). |
+| §3.77 Seal generation + permalink gate moved from Plus to Pro | 30 Jun 2026 | Seal generation and permalink access removed from Plus tier. Gate is now Pro or above (was Plus or above). Affects: PB §11.5, §16.4; EB §4.10; Pricing Summary v2.2 → v2.3. Brief updates pending this session. |
+| §3.78 Role column added to skept-auth users table | 30 Jun 2026 | `role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'founder', 'admin'))` added via migration `0003_add_role_to_users.sql`, committed 605515a. `idx_users_role` index created. Both existing users (is_admin=1) set to role='admin'. is_admin column now superseded — drop in future migration. Affects: EB §4.10 (role field documented alongside tier field); D1 schema doc. Brief updates pending this session. |
+
+### §3.80 — Admin interface ✅ 30 Jun 2026
+
+- [x] Overview (Dashboard) — six stat cards, verdict distribution, wired to skept-analysis D1
+- [x] Job log — paginated with verdict/platform/tier/period filters; detail drawer per job
+- [x] Signals — video + audio score distribution, dubbing exclusion and trim counts
+- [x] Cost — Resemble API cost estimate, breakdown by tier
+- [x] Users — paginated user table, tier badges, quota used/limit columns
+- [x] Founder cohort — Max tier proxy list
+- [x] skept-admin Worker live at skept.co/admin* + skept.co/api/admin/*; ADMIN_TOKEN secret provisioned, sessionStorage token-gate
+- [x] Add tier sub-items (Free/Lite/Plus/Pro/Max) under Users in sidebar, wired to GET /admin/api/users?tier=
+- [x] Add period selector (7d/30d/3m/6m/9m/12m/all) to Overview view, wired to GET /admin/api/overview?period=
 
 ---
 
 ## 3. Open items
 
-### Planning note — Trust Seal feature scope (29 Jun 2026)
-
-Full seal feature complexity reviewed against current production state. No new decisions or doc gaps identified — PB §16 is fully current. Next active build tasks (Phase 2):
-- One-tap share action UX (seal asset + permalink, single action)
-- Plus tier seal gating
-- Perceptual hash + first-frame thumbnail on verdict page (§16.5)
-- C2PA manifest embedding (originator watermarking Phase 1 bridge)
-
-Invisible watermark layer (Meta WAM / SteganoGAN) remains Phase 2 — separate project gate.
-
----
-
 ### 🔴 §3.76 — Logo SVG colour fix
 
 Loupe mark rendering grey in nav across all frontend pages (index.html, history.html, verify.html, settings.html) and on the verdict Worker page — SVG `color` property not resolving to `#1a1a1a` (ink) in the nav context. Fix: set `color: var(--ink)` explicitly on the SVG element in nav markup. One-line fix per file; affects all five surfaces.
+
+---
+
+### 🟡 §3.79 — Founder + Admin privilege matrix — decision pending
+
+Role column (`user|founder|admin`) is live in D1. Admin and Founder are recognised role values. Privileges for both roles are not yet defined or locked.
+
+**Admin — direction agreed, not yet specced:**
+- Bypasses all quota checks
+- Access to admin dashboard (`skept.co/admin`)
+- Manual tier override capability
+- Aggregate usage stats visibility
+- Full spec and EB §4.10 update pending privilege decisions.
+
+**Founder — decision required before spec:**
+- `role='founder'` + `tier='max'` confirmed as the structural approach
+- Specific privilege set (beyond Max features) not yet decided
+- Candidate privileges to decide: founder badge in UI, priority support marker, early feature access, quota exemption or uplift, other perks
+- Once decided: PB §11.5, §16.4; EB §4.10; Pricing Summary to be updated.
 
 ---
 
@@ -159,9 +180,9 @@ Loupe mark rendering grey in nav across all frontend pages (index.html, history.
 
 | **Document** | **Version** | **Last touched** | **Next planned revision** |
 | --- | --- | --- | --- |
-| project_brief_v0_24.docx | v0.24 | 29 Jun 2026 | No planned revision queued |
+| project_brief_v0_24.docx | v0.24 | 29 Jun 2026 | v0.25 — §11.5, §16.4 (seal/permalink gate Pro+); §3.77 |
 | legal-brief-v0_10.docx | v0.10 | 23 Jun 2026 | Next attorney engagement outcomes or new legal questions |
-| engineers_brief_v0_21.docx | v0.21 | 29 Jun 2026 | No planned revision queued |
+| engineers_brief_v0_21.docx | v0.21 | 29 Jun 2026 | v0.22 — §4.10 (seal gate Pro+, role column documented); §3.77, §3.78 |
 | trademark-clearance-brief-v0_3.docx | v0.3 | 19 May 2026 | v0.4 — US/EU/UK filing outcomes; entity assignment; Class 41 skip confirmed |
 | skept-account-settings.html | v0.2 | 05 May 2026 | Next UX iteration cycle |
 | skept-trust-seal-ux.html | v0.2 | 04 May 2026 | Next UX iteration cycle |
@@ -172,18 +193,8 @@ Loupe mark rendering grey in nav across all frontend pages (index.html, history.
 | waitlist-worker.js | v0.1 | 29 Apr 2026 | When deployed — fill KV namespace IDs in wrangler.toml |
 | CLOUDFLARE_WORKER.md | v0.1 | 29 Apr 2026 | No planned revision |
 | skept_advisor_script_v1_4.docx | v1.4 | 30 Apr 2026 | No planned revision |
-| skept-pricing-summary-v2_2.md | v2.2 | 28 Jun 2026 | Update on any pricing change — authoritative source, always read before citing numbers |
+| skept-pricing-summary-v2_2.md | v2.2 | 28 Jun 2026 | v2.3 — Plus feature list updated (seal/permalink removed); §3.77 |
 | frontend/history.html | v1.0 | 29 Jun 2026 | Next UX iteration after verify page live and real entries render |
 | frontend/verify.html | v1.0 | 29 Jun 2026 | Next UX iteration after end-to-end verify flow confirmed working |
 | cloudflare/verdict-worker.js | v1.0 | 29 Jun 2026 | Iterate on evidence card rendering once real evidence_json shape confirmed |
 | cloudflare/templates/skept-base-template.html | v1.0 | 29 Jun 2026 | Update when nav structure changes (new links, avatar upgrade, dark mode) |
-
----
-
-## Admin interface
-
-- [ ] Add `is_admin INTEGER NOT NULL DEFAULT 0` column to users table — skept-auth D1 (wrangler d1 execute --remote)
-- [ ] Build `skept-admin` Worker: bindings skept-auth D1 (read) + skept-analysis D1 (read); auth via ADMIN_TOKEN secret (Bearer)
-- [ ] Implement admin API endpoints: GET /jobs, GET /jobs/:id, GET /stats/verdicts, GET /stats/signals, GET /stats/cost, GET /users, PATCH /users/:id/tier
-- [ ] Wire skept-admin-dashboard.html to live API (replace static JOBS object with fetch calls to /api/admin/jobs/:id)
-- [ ] Deploy: skept.co/admin/* → skept-admin Worker route in Cloudflare

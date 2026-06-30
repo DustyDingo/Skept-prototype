@@ -2,66 +2,52 @@
 
 ---
 
-## 2026-06-29 (Session 2 continued)
+## 2026-06-30
 
-### Admin interface — architecture decision + HTML spec
+### Admin dashboard — live and operational
 
-- Decided against adding `admin` as a tier. Conflates billing tier (quota/feature gating) with operator role (internal tooling). Orthogonal concerns — a future admin may be on any billing tier.
-- Approach: `is_admin INTEGER NOT NULL DEFAULT 0` boolean column on users table in skept-auth D1. Tier enforcement logic unchanged.
-- Auth: static `ADMIN_TOKEN` Worker secret (Bearer header) for initial solo use. `is_admin` DB gate added when multi-user access needed.
-- `skept-admin` Worker at `skept.co/admin/*`. JWT → user_id → `is_admin = 1` check. 403 if not admin. Reuses existing magic link auth — no new auth infrastructure.
-- Admin API endpoints designed:
-  - GET /api/admin/jobs — paginated job list with summary cols
-  - GET /api/admin/jobs/:id — full job detail incl. evidence_json
-  - GET /api/admin/stats/verdicts — verdict distribution, date range param
-  - GET /api/admin/stats/signals — per-pillar score distributions
-  - GET /api/admin/stats/cost — estimated Resemble spend by period
-  - GET /api/admin/users — user list, tier, quota usage
-  - PATCH /api/admin/users/:id/tier — manual tier override
-- HTML spec produced: skept-admin-dashboard.html — 5 views: Dashboard (8 stat cards, verdict dist, platform split, recent jobs), Job log (filterable table with video/audio scores, flags, trim indicator), Signal stats (score bucket histograms, certainty scalar dist, asymmetric exclusion breakdown, per-platform score floor), API cost (Resemble spend breakdown by tier), Users + Founder cohort + Config.
-- Job detail drawer: per-job pillar cards with certainty scalar fill bar + per-frame sparkline, full fusion calculation rendered as readable formula, C2PA status, conflict flags. Dubbing exclusion case fully wired (greyed pillar card, collapsed denominator display).
-- Spec file ready to hand to Claude Code once skept-admin Worker is built.
+- skept-admin Worker deployed and confirmed working at skept.co/admin/api/*
+- frontend/public/admin.html live at skept.co/admin, token-gated (ADMIN_TOKEN secret, sessionStorage)
+- Deployment debugging resolved across several rounds:
+  - _redirects routing conflict — /admin was falling through to catch-all and landing on /verify. Fixed by moving admin.html into frontend/public/ so Vite copies it to dist/ natively; explicit /admin redirect rule removed once that was in place (was causing ERR_TOO_MANY_REDIRECTS as a duplicate route).
+  - ADMIN_TOKEN secret had to be reprovisioned after initial "Incorrect token" — resolved via fresh openssl-style PowerShell-generated token and wrangler secret put.
+- Two features added post-launch, confirmed live via screenshot:
+  - Sidebar Users section now has Free/Lite/Plus/Pro/Max tier sub-items (indented under "All users"), each filtering the user table via GET /admin/api/users?tier=X. Active tier highlighted in sidebar, synced with in-view dropdown.
+  - Overview dashboard now has a period selector (7d/30d/3m/6m/9m/12m/all) next to the page title, re-fetching GET /admin/api/overview?period=X and updating subtitle + all stat cards. Worker endpoint updated to accept period param (previously hardcoded to 30d).
+- Admin dashboard considered feature-complete for v1 — Dashboard, Job log, Signals, Cost, Users (with tier filtering), Founder cohort views all live and wired to real D1 data.
 
 ---
 
-## 29 Jun 2026 — Trust Seal feature scope reviewed; difficulty assessed
+## 30 Jun 2026 — Role column live; privilege matrix established; brief updates queued
 
-**Session type:** Planning — seal feature complexity assessment, phasing confirmation.
+**Session type:** Architecture and planning — role/tier privilege matrix, D1 migration, checklist updates.
 
 ---
 
-**Outcome:**
+**Decisions locked:**
 
-Trust Seal architecture reviewed against current production state. Feature is already deeply specced in PB §16; no new decisions required. Summary of difficulty tiers established:
+- **Privilege matrix confirmed** — five subscription tiers (Free/Lite/Plus/Pro/Max) locked with one edit: seal generation and permalink access moved from Plus to Pro. Plus retains detailed evidence output, export to PDF, viewed history tab, full evidence history.
+- **Role column live** — `role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'founder', 'admin'))` added to `skept-auth / users` via migration `0003_add_role_to_users.sql` (commit 605515a). `idx_users_role` index created. Both existing users (is_admin=1) set to `role='admin'`. `is_admin` column now superseded — flagged for drop in future migration.
+- **Role architecture** — `role` is orthogonal to `tier`. Admin and Founder are access roles, not subscription tiers. A user can be `role='founder'` + `tier='max'` simultaneously. `founder_cohort BOOLEAN` column (previously queued) retired — superseded by role field.
+- **Admin privileges (direction agreed)** — bypasses all quota checks; admin dashboard access (`skept.co/admin`); manual tier override; aggregate usage stats. Full spec pending (§3.79).
+- **Founder privileges (decision pending)** — structural approach confirmed (`role='founder'` + `tier='max'`). Specific privilege set beyond Max features not yet decided. Logged as §3.79 for next decision session.
 
-**Low effort (seal backbone already live):**
-- Public verdict page (`skept.co/v/[UUID]`) deployed and working — verdict record lookup, server-rendered page, 404 state confirmed.
-- `skept-analysis` D1 already stores everything the seal page needs.
-- Four colour states (solid green, light green, amber, red) locked in brand tokens and spec.
+**Checklist updates:**
+- §3.77 closed — seal/permalink gate moved to Pro
+- §3.78 closed — role column live
+- §3.79 opened — Founder + Admin privilege matrix, decision pending
 
-**Medium effort — Phase 2 (seal generation UX):**
-- One-tap share action: seal asset (PNG/SVG in verdict colour) + permalink to clipboard simultaneously. "One action not three" constraint is the binding UX requirement.
-- iOS Share Extension already serves verify ingestion — same mechanism handles seal share-out.
-- Tier gating: Plus and above generate seals; Free/Lite cannot surface permalink URL in app.
-- Perceptual hash + first-frame thumbnail on verdict page (anti-spoofing §16.5).
-- Model drift notice ("produced by model vX — re-analyse?") — small, important.
+**Brief updates queued (not yet built):**
+- Pricing Summary v2.2 → v2.3: Plus feature list (seal/permalink removed)
+- Project Brief v0.24 → v0.25: §11.5, §16.4
+- Engineers Brief v0.21 → v0.22: §4.10 (seal gate Pro+, role field documented)
 
-**Hard — Phase 2 (watermarking):**
-- C2PA manifest embedding in output video — `c2pa-python` in verify pipeline. Non-trivial. Bridge standard for Phase 1 originator watermarking.
-- Invisible forensic watermark surviving platform re-encoding (Meta WAM / SteganoGAN benchmarking) — correctly scoped to Phase 2. Treat as separate project.
-
-**Critical path to seal MVP:** Plus tier gating → one-tap share UX → seal asset generation → verdict page perceptual hash + thumbnail. Estimated: one focused week of dev once iOS build is unblocked.
-
-**No new checklist items opened.** Phasing confirmed as already documented in PB §16.7. No doc updates required — existing brief fully covers scope.
-
-**Next action proposed:** Spec the share-flow UX or the seal asset generation (PNG/SVG generation per verdict colour state).
-
-**Open items at session close:** §3.76 (logo SVG colour fix)
+**Open items at session close:** §3.76 (logo SVG colour fix), §3.79 (Founder/Admin privilege matrix)
 **Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
 
 ---
 
-## 29 Jun 2026 — Base template established; nav/footer shell locked
+
 
 **Session type:** UI design — canonical base template, nav pattern decision.
 
