@@ -2,10 +2,12 @@ import { checkAuth } from './auth.js';
 import { logout, submitVerify } from './api.js';
 
 const VERDICT_META = {
-  likely_authentic:   { color: '#3a7a50', label: 'Verified original',    headline: 'All analysers clean. No manipulation signals found.' },
-  inconclusive:       { color: '#c07800', label: 'Signs of manipulation', headline: 'One or more analysers flagged something. Signals conflict.' },
-  insufficient_data:  { color: '#c07800', label: 'Signs of manipulation', headline: 'One or more analysers flagged something. Signals conflict.' },
-  likely_manipulated: { color: '#a83a2a', label: 'Strong AI indicators',  headline: 'Multiple analysers agree. Strong signs of AI generation.' },
+  authentic:         { color: '#3a7a50', label: 'Verified original',    headline: 'All analysers clean. No manipulation signals found.' },
+  clean:             { color: '#3a7a50', label: 'Verified original',    headline: 'All analysers clean. No manipulation signals found.' },
+  ambiguous:         { color: '#c07800', label: 'Signs of manipulation', headline: 'One or more analysers flagged something. Signals conflict.' },
+  suspicious:        { color: '#c07800', label: 'Signs of manipulation', headline: 'One or more analysers flagged something. Signals conflict.' },
+  insufficient_data: { color: '#c07800', label: 'Signs of manipulation', headline: 'One or more analysers flagged something. Signals conflict.' },
+  manipulated:       { color: '#a83a2a', label: 'Strong AI indicators',  headline: 'Multiple analysers agree. Strong signs of AI generation.' },
 };
 
 const PILLAR_LABELS = {
@@ -119,10 +121,10 @@ function renderVerdict(data, clipUrl) {
   renderEvidenceCards(data.pillar_detail || null);
 
   const copyBtn = document.getElementById('copy-link-btn');
-  if (data.analysis_id) {
+  if (data.permalink_uuid) {
     copyBtn.hidden = false;
     copyBtn.onclick = () => {
-      const link = `https://skept.co/v/${data.analysis_id}`;
+      const link = `https://skept.co/v/${data.permalink_uuid}`;
       navigator.clipboard.writeText(link)
         .then(() => showToast('Copied'))
         .catch(() => showToast('Could not copy'));

@@ -98,7 +98,7 @@ async function callIngest(ingestUrl, ingestSecret, clipUrl, jobId) {
 }
 
 async function callResemble(apiKey, clipUrl) {
-  const res = await fetch('https://api.resemble.ai/v2/detect', {
+  const res = await fetch('https://app.resemble.ai/api/v2/detect', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -252,7 +252,7 @@ export default {
           authentic:         'authentic',
           clean:             'authentic',
           ambiguous:         'ambiguous',
-          suspicious:        'manipulated',
+          suspicious:        'suspicious',
           manipulated:       'manipulated',
           insufficient_data: 'ambiguous',
         };
@@ -260,13 +260,14 @@ export default {
       }
 
       const run_depth = segments.length === 1 ? '5s' : segments.length === 2 ? '10s' : '15s';
+      const permalinkUuid = tierConfig.permalink ? crypto.randomUUID() : null;
 
       await env.SKEPT_ANALYSIS_DB.prepare(`
         INSERT INTO analysis_history (
           id, user_id, clip_url, r2_key, platform, verdict_state, score,
           evidence_json, conflict_flags, tier_at_creation, priority_queue,
-          model_version, run_depth, created_at, purge_after
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          model_version, run_depth, permalink_uuid, created_at, purge_after
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         analysisId,
         userId,
@@ -281,6 +282,7 @@ export default {
         priorityQueue ? 1 : 0,
         'resemble-detect-3b-omni',
         run_depth,
+        permalinkUuid,
         createdAt,
         purgeAfter
       ).run();
@@ -298,6 +300,7 @@ export default {
           exclusion_reasons,
           tier_at_run: tier,
           analysis_id: analysisId,
+          permalink_uuid: permalinkUuid,
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
