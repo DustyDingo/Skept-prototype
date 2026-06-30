@@ -17,6 +17,11 @@ binding = "AUTH_SESSIONS"
 id = "acb86bfb713e453ab616053bdbc785f8"
 preview_id = "4367d8434b94480f9e38e6989d1c01ff"
 
+[[r2_buckets]]
+binding = "CLIP_BUCKET"
+# TODO: confirm exact name from Railway R2_BUCKET_NAME env var before deploying
+bucket_name = "skept-clips"
+
 [vars]
 INGEST_WORKER_URL = "https://skept-ingest.up.railway.app"
 

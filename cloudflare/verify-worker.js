@@ -97,14 +97,26 @@ async function callIngest(ingestUrl, ingestSecret, clipUrl, jobId) {
   return res.json();
 }
 
-async function callResemble(apiKey, clipUrl) {
+async function callResemble(apiKey, bucket, r2Key) {
+  const obj = await bucket.get(r2Key);
+  if (!obj) throw new Error(`R2 object not found: ${r2Key}`);
+
+  const bytes = await obj.arrayBuffer();
+  const filename = r2Key.split('/').pop() || 'clip.mp4';
+
+  const form = new FormData();
+  form.append('file', new Blob([bytes], { type: 'video/mp4' }), filename);
+  form.append('content_type', 'video');
+  form.append('intelligence', 'true');
+
   const res = await fetch('https://app.resemble.ai/api/v2/detect', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
+      Prefer: 'wait',
+      // Do not set Content-Type — FormData sets the multipart boundary automatically
     },
-    body: JSON.stringify({ url: clipUrl, content_type: 'video', intelligence: true }),
+    body: form,
   });
 
   if (!res.ok) throw new Error(`Resemble API error: ${res.status}`);
@@ -197,7 +209,7 @@ export default {
       // Step 5 — Resemble API
       let resembleData;
       try {
-        resembleData = await callResemble(env.RESEMBLE_API_KEY, clipUrl);
+        resembleData = await callResemble(env.RESEMBLE_API_KEY, env.CLIP_BUCKET, r2Key);
       } catch (err) {
         return new Response(JSON.stringify({ error: 'analysis_failed' }), {
           status: 502,
