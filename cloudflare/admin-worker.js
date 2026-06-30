@@ -35,37 +35,42 @@ function parseFlags(raw) {
 
 // ── Endpoint handlers ─────────────────────────────────────────────────────────
 
-async function handleOverview(env) {
-  const since = sinceTs('30d');
+async function handleOverview(request, env) {
+  const url = new URL(request.url);
+  const period = url.searchParams.get('period') || '30d';
+  const isAll = period === 'all';
+  const since = isAll ? null : sinceTs(period);
+  const timeClause = isAll ? '1=1' : 'created_at > ?';
+  const binds = isAll ? [] : [since];
 
   const [total, verdicts, avgScore, audioExcl, activeUsers, trimmedCount, durationRows] = await Promise.all([
     env.SKEPT_ANALYSIS_DB.prepare(
-      'SELECT COUNT(*) as c FROM analysis_history WHERE created_at > ?'
-    ).bind(since).first(),
+      `SELECT COUNT(*) as c FROM analysis_history WHERE ${timeClause}`
+    ).bind(...binds).first(),
 
     env.SKEPT_ANALYSIS_DB.prepare(
-      'SELECT verdict_state, COUNT(*) as count FROM analysis_history WHERE created_at > ? GROUP BY verdict_state'
-    ).bind(since).all(),
+      `SELECT verdict_state, COUNT(*) as count FROM analysis_history WHERE ${timeClause} GROUP BY verdict_state`
+    ).bind(...binds).all(),
 
     env.SKEPT_ANALYSIS_DB.prepare(
-      'SELECT AVG(score) as avg FROM analysis_history WHERE created_at > ?'
-    ).bind(since).first(),
+      `SELECT AVG(score) as avg FROM analysis_history WHERE ${timeClause}`
+    ).bind(...binds).first(),
 
     env.SKEPT_ANALYSIS_DB.prepare(
-      "SELECT COUNT(*) as c FROM analysis_history WHERE created_at > ? AND conflict_flags LIKE '%audio_dubbing_pattern%'"
-    ).bind(since).first(),
+      `SELECT COUNT(*) as c FROM analysis_history WHERE ${timeClause} AND conflict_flags LIKE '%audio_dubbing_pattern%'`
+    ).bind(...binds).first(),
 
     env.SKEPT_ANALYSIS_DB.prepare(
-      'SELECT COUNT(DISTINCT user_id) as c FROM analysis_history WHERE created_at > ?'
-    ).bind(since).first(),
+      `SELECT COUNT(DISTINCT user_id) as c FROM analysis_history WHERE ${timeClause}`
+    ).bind(...binds).first(),
 
     env.SKEPT_ANALYSIS_DB.prepare(
-      'SELECT COUNT(*) as c FROM analysis_history WHERE created_at > ? AND trimmed = 1'
-    ).bind(since).first(),
+      `SELECT COUNT(*) as c FROM analysis_history WHERE ${timeClause} AND trimmed = 1`
+    ).bind(...binds).first(),
 
     env.SKEPT_ANALYSIS_DB.prepare(
-      'SELECT original_duration_sec FROM analysis_history WHERE created_at > ?'
-    ).bind(since).all(),
+      `SELECT original_duration_sec FROM analysis_history WHERE ${timeClause}`
+    ).bind(...binds).all(),
   ]);
 
   const totalJobs = total.c;
@@ -81,7 +86,7 @@ async function handleOverview(env) {
   }
 
   return json({
-    period: '30d',
+    period,
     total_jobs: totalJobs,
     avg_score: avgScore.avg,
     avg_fusion_score: avgScore.avg,
@@ -432,7 +437,7 @@ export default {
 
     try {
       if (method === 'GET') {
-        if (pathname === '/admin/api/overview')                     return handleOverview(env);
+        if (pathname === '/admin/api/overview')                     return handleOverview(request, env);
         if (pathname === '/admin/api/jobs')                         return handleJobs(request, env);
         if (pathname === '/admin/api/stats/verdicts')               return handleStatsVerdicts(request, env);
         if (pathname === '/admin/api/signals'

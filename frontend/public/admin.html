@@ -272,8 +272,23 @@
       <span class="sidebar-icon">💸</span> Cost
     </button>
     <div class="sidebar-section">Users</div>
-    <button class="sidebar-item" onclick="showView('users', event)">
+    <button class="sidebar-item" onclick="filterUserTier('', event)">
       <span class="sidebar-icon">👤</span> All users
+    </button>
+    <button class="sidebar-item" style="padding-left:26px;font-size:12.5px" onclick="filterUserTier('free', event)">
+      <span class="tier-badge free">free</span>
+    </button>
+    <button class="sidebar-item" style="padding-left:26px;font-size:12.5px" onclick="filterUserTier('lite', event)">
+      <span class="tier-badge lite">lite</span>
+    </button>
+    <button class="sidebar-item" style="padding-left:26px;font-size:12.5px" onclick="filterUserTier('plus', event)">
+      <span class="tier-badge plus">plus</span>
+    </button>
+    <button class="sidebar-item" style="padding-left:26px;font-size:12.5px" onclick="filterUserTier('pro', event)">
+      <span class="tier-badge pro">pro</span>
+    </button>
+    <button class="sidebar-item" style="padding-left:26px;font-size:12.5px" onclick="filterUserTier('max', event)">
+      <span class="tier-badge max">max</span>
     </button>
     <button class="sidebar-item" onclick="showView('cohort', event)">
       <span class="sidebar-icon">⭐</span> Founder cohort
@@ -286,8 +301,19 @@
     <!-- OVERVIEW -->
     <div id="view-overview" class="view active">
       <div class="view-header">
-        <div class="view-title">Overview</div>
-        <div class="view-sub">Last 30 days</div>
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+          <div class="view-title">Overview</div>
+          <select class="filter-select" id="overview-period" onchange="onOverviewPeriodChange()">
+            <option value="7d">Last 7 days</option>
+            <option value="30d" selected>Last 30 days</option>
+            <option value="3m">Last 3 months</option>
+            <option value="6m">Last 6 months</option>
+            <option value="9m">Last 9 months</option>
+            <option value="12m">Last 12 months</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+        <div class="view-sub" id="overview-sub">Last 30 days · skept-analysis D1 · refreshed on load</div>
       </div>
       <div class="stat-grid">
         <div class="stat-card">
@@ -413,7 +439,7 @@
     <div id="view-users" class="view">
       <div class="view-header">
         <div class="view-title">All users</div>
-        <div class="view-sub">Registered accounts</div>
+        <div class="view-sub" id="users-sub">Registered accounts</div>
       </div>
       <div class="table-wrap">
         <table>
@@ -512,6 +538,14 @@ const viewLoaded = {};
 let jobsPage = 1;
 let jobsFilters = { verdict: '', platform: '', tier: '', period: '30d' };
 let usersPage = 1;
+let usersFilter = { tier: '' };
+let overviewPeriod = '30d';
+const PERIOD_LABELS = {
+  '7d': 'Last 7 days', '30d': 'Last 30 days',
+  '3m': 'Last 3 months', '6m': 'Last 6 months',
+  '9m': 'Last 9 months', '12m': 'Last 12 months',
+  'all': 'All time',
+};
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
 async function showView(id, event) {
@@ -573,8 +607,9 @@ function setEl(id, val) {
 // ── Overview ───────────────────────────────────────────────────────────────────
 async function loadOverview() {
   let data;
-  try { data = await apiGet('/admin/api/overview'); } catch { return; }
+  try { data = await apiGet('/admin/api/overview?period=' + overviewPeriod); } catch { return; }
   if (!data) return;
+  setEl('overview-sub', (PERIOD_LABELS[overviewPeriod] || 'Last 30 days') + ' · skept-analysis D1 · refreshed on load');
 
   setEl('stat-total-jobs', data.total_jobs ?? '—');
   setEl('stat-avg-score', data.avg_score != null ? data.avg_score.toFixed(2) : '—');
@@ -610,6 +645,11 @@ async function loadOverview() {
       '<th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-softer);border-bottom:1px solid var(--rule)">Count</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
+}
+
+function onOverviewPeriodChange() {
+  overviewPeriod = document.getElementById('overview-period').value;
+  loadOverview();
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────────────
@@ -859,14 +899,34 @@ async function loadCost() {
 }
 
 // ── Users ──────────────────────────────────────────────────────────────────────
+function filterUserTier(tier, event) {
+  usersFilter.tier = tier;
+  usersPage = 1;
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  if (event && event.currentTarget) event.currentTarget.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-users').classList.add('active');
+  if (!viewLoaded['users']) viewLoaded['users'] = true;
+  loadUsers(1);
+}
+
 async function loadUsers(page) {
   usersPage = page;
   const tbody = document.getElementById('users-tbody');
   tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading…</td></tr>';
 
+  const params = new URLSearchParams({ page });
+  if (usersFilter.tier) params.set('tier', usersFilter.tier);
   let data;
-  try { data = await apiGet('/admin/api/users?page=' + page); } catch { return; }
+  try { data = await apiGet('/admin/api/users?' + params.toString()); } catch { return; }
   if (!data) return;
+
+  const tierLabel = usersFilter.tier
+    ? usersFilter.tier.charAt(0).toUpperCase() + usersFilter.tier.slice(1)
+    : null;
+  setEl('users-sub', tierLabel
+    ? data.total + ' users on ' + tierLabel
+    : 'Registered accounts');
 
   if (!data.users.length) {
     tbody.innerHTML = '<tr><td colspan="5" class="empty">No users found.</td></tr>';
