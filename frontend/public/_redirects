@@ -1,2 +1,5 @@
 /admin /admin.html 200
+/verify /verify.html 200
+/history /history.html 200
+/settings /settings.html 200
 /* /index.html 200
