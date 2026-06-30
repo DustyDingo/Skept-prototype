@@ -2,6 +2,135 @@
 
 ---
 
+## 30 Jun 2026 — §3.89 closed: verify Worker scoring reconciled to backend, deployed
+
+**Session type:** Code — Worker reconciliation and deployment. Single-item session: close the divergence found at end of session 1.
+
+---
+
+**§3.89 — CLOSED (30 Jun 2026, commits cd5df37 + e80f38d, Worker version 96b9e66a):**
+
+Seven fixes shipped in a single Claude Code pass against `cloudflare/verify-worker.js`, `cloudflare/fusion.js`, and `cloudflare/tier-config.js`. Backend `backend/analysers/` was read-only throughout — source of record.
+
+**Fix 1 — Audio score formula (verify-worker.js):**
+Old: `rawToSuspicion(audioScoreRaw)` → `(raw + 1.0) / 2.0`. Wrong — this was the transform that was removed from the prototype during §3.71.
+New: `Math.max(0.0, audioScoreRaw)` passthrough, matching `audio.py:56`. -1.0 no-speech sentinel preserved (→ null, excluded from fusion).
+
+**Fix 2 — Video base score (verify-worker.js):**
+Old: `rawToSuspicion(videoScoreRaw)` — same wrong transform on the primary deepfake pillar; flipped low/authentic scores to suspicious.
+New: `videoScoreRaw` used directly as the base score before certainty weighting, matching `deepfake.py:257`.
+
+**Fix 3 — Certainty scalar (verify-worker.js):**
+Old: not present.
+New: `SKEPT_FRAMES = 6`; frame count extracted from `video_metrics.children[0].children[*].children` (filtering on `score != null && certainty != null`); `certainty = min(SKEPT_FRAMES, resembleFrameCount) / SKEPT_FRAMES`; applied as `videoScoreRaw * certainty`. Matches `deepfake.py:221–223, 258`.
+
+**Fix 4 — Non-human content guard (verify-worker.js):**
+Old: not present.
+New: `if (resembleFrameCount <= 1) videoSuspicion = null` — deepfake pillar excluded from fusion (score null). Handles both the non-human guard (`deepfake.py:226`) and the low-coverage guard (empty children path) in one check, since both collapse to resembleFrameCount = 0 or 1.
+
+**Fix 5 — rawToSuspicion cleanup (verify-worker.js):**
+After fixes 1 and 2, both references to `rawToSuspicion` were gone. Removed `rawToSuspicion` and its dependency `clamp` entirely.
+
+**Fix 6 — Tier quotas + Lite tier (tier-config.js):**
+Pro 50 → 40, Max 100 → 60. Added missing `lite` tier: quota=10, `depthSegments: ['head']`, all feature flags matching Free (entry paid tier — no permalink/seals/evidenceJson, no viewedHistory). Matches `free=5, lite=10, plus=20, pro=40, max=60` quota table.
+
+**Fix 7 — Verdict bands (fusion.js):**
+Old: 3 bands — `likely_authentic` (<0.40) / `inconclusive` (0.40–0.70) / `likely_manipulated` (≥0.70). Thresholds AND band count both wrong.
+New: 5 bands matching `backend/analysers/fusion.py:152–186` — `authentic` (<0.20) / `clean` (<0.50) / `ambiguous` (==0.50) / `suspicious` (<0.80) / `manipulated` (≥0.80). Score rounded to 3 decimal places (`Math.round(...* 1000) / 1000`) to match backend `round(..., 3)`. `mapVerdict` in verify-worker.js updated to map 5 bands to 3 D1 `verdict_state` values: authentic/clean → `'authentic'`, ambiguous → `'ambiguous'`, suspicious/manipulated → `'manipulated'`.
+
+**CLAUDE.md finding:** The Verdict bands section had been showing 3-band thresholds (0.30/0.60) since initial doc creation. The backend has never used these values — `fusion.py` has always had 5 bands at 0.20/0.50/0.80. Corrected in the CLAUDE.md closure commit with a note to not revert.
+
+**Deployed:** `cd cloudflare && npx wrangler@latest deploy --config wrangler-verify.toml` → version `96b9e66a`, route `skept.co/api/verify/*`.
+
+---
+
+**Open items at session close:** §3.70 (audio score floor monitoring — no action), §3.76 (verdict Worker logo confirmation pending), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only), §3.78 (Stripe coupon config), §3.79, §3.81, §3.85, §3.88. §3.89 closed.
+**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
+
+---
+
+## 30 Jun 2026 — Pricing v2.3 (5s segments), GST clarification, prototype triage, production Worker divergence found
+
+**Session type:** Doc build + decision logging + prototype diagnosis. Started as a routine checklist knock-out (§3.77/§3.78); surfaced a margin-floor decision and ended on a significant production/prototype divergence finding.
+
+---
+
+**§3.77 — segment duration 4s → 5s, pricing folded in:**
+
+- Pricing summary v2.2 → v2.3 built. Cost/run recalculated: Free/Lite $0.55, Plus/Pro $1.10, Max $1.65. Full-cap costs and both margin tables (subscription + top-up packs) revised.
+- Margin impact surfaced and confirmed deliberate: Plus/Pro 41.3% → 26.7%, Max 34.0% → 17.5%, top-up packs ~34–37% → ~17–21%. Founder's rationale logged in the doc: reliability (more analysis depth) chosen over price-cutting or margin defence; the 40% floor was a planning assumption, now explicitly superseded. Startup posture — volume over margin %.
+- §3.86 (seal/permalink gate Plus → Pro) folded into the same v2.3 pass.
+- GST clarification added: 10% AU GST is a pass-through, zero margin effect (verified by recalc — margins identical with/without GST). New note distinguishes "no margin impact" from the real cash-flow/BAS reconciliation effect (Stripe AU payouts run ~10% above USD list).
+
+**§3.78 — founder cohort coupon:** Decision confirmed (Plus/Pro/Max eligible, enforced at distribution point). PB §11.5 description fold-in queued for next PB build.
+
+**§3.77 Claude Code prompt drafted** — then held (see §3.89 below).
+
+---
+
+**Prototype triage (cartoon-cat TikTok clip, verdict 79% suspicious):**
+
+Verdict landed correct on genuinely AI content, but on two pillars both running outside their valid domain. Triage doc's Issue 1 (audio conversion) and Issue 2 (frame scalar overflow) reviewed and confirmed NOT bugs in the prototype — audio passthrough is the locked behaviour, scalar is `min()`-capped by construction. New findings logged:
+
+- **Non-human guard too narrow:** faceswap pillar scored a faceless cartoon 99.74% and drove the verdict. Guard only excludes on 0 ImageResult frames; Resemble's own liveness layer said not_real_person. A human-made cartoon would score the same — false-positive risk. Sightengine (§3.20) is the architectural fix; interim, exclude deepfake pillar on non-human-face content.
+- **§3.45 no-speech anchor not firing:** clip has audio (SFX/music, no speaker) but audio pillar showed raw 0.4443 not the 0.50 anchor. Likely lost when §3.57 swapped to Omni embedded-audio path. Not caught by §3.59 (audio present, just no speech).
+- UI "8s of 69.8s" stale (4s-era); prototype sampler actually running 5s per log.
+
+---
+
+**§3.89 — production `skept-verify` Worker divergence (the significant finding):**
+
+Cross-checked production via Cloudflare MCP after the prototype log showed 5s sampling. Deployed `skept-verify` (last modified 28 Jun, predates both the §3.77 and audio-passthrough decisions) turned out to be an OLDER implementation than the prototype, diverging on core scoring:
+
+1. Audio score run through `(raw+1)/2` — the transform that was REMOVED per the passthrough decision. The triage doc's "Issue 1" IS a live bug — in production, not the prototype.
+2. Video score also run through `(raw+1)/2` — wrong transform on the primary pillar; flips low/authentic scores to suspicious.
+3. No certainty scalar.
+4. No non-human guard.
+5. Tier quota drift: Pro 50 (should be 40), Max 100 (should be 60).
+6. Segment duration stale (`duration: 6`, run_depth `6s/12s/18s`) — three codebases now disagree.
+
+Logged as §3.89, scoped as a single reconciliation task. §3.77 standalone code prompt explicitly held — running it against this Worker would fix the segment number and leave four scoring bugs in place.
+
+---
+
+**Decisions logged:** Margin floor superseded (reliability over margin); GST is pass-through (no margin effect); §3.77 code folded into §3.89; prototype is currently ahead of production on scoring correctness.
+
+**Open items at session close:** §3.89 (production verify Worker reconciliation — NEW, blocks §3.77 code), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only — pricing done), §3.78 (PB §11.5 fold-in), plus prototype findings to formalise (non-human guard, §3.45 no-speech anchor, UI stale-string + 100% display rounding, Wikidata Q22686 monitor). Prior: §3.76 (verdict Worker runtime confirmation), §3.79, §3.81, §3.84, §3.85, §3.88.
+
+**Files produced:** `skept-pricing-summary-v2_3.md`, updated `v19-consolidation-checklist.md`.
+
+---
+
+## 30 Jun 2026 — §3.76 logo SVG colour fix diagnosed and applied
+
+**Session type:** Bug fix — diagnosis, fix, deployment, partial visual confirmation.
+
+---
+
+**Root cause identified:**
+
+- `<symbol id="skept-mark">` uses `fill="currentColor"` on its shapes. The logo instances (`.nav-logo svg`, `.footer-logo svg`) never set their own `color`, so `currentColor` was inheriting from the ancestor `<a>` link instead of resolving to ink — rendering the loupe mark grey instead of solid `#1a1a1a`.
+- Scope correction: originally tracked as five live surfaces (index, history, verify, settings, verdict-worker). Confirmed the same bug exists in `skept-base-template.html` — the canonical source all pages derive from — so scope expanded to six files; fixing only the five live pages would have left the template silently broken for any future page built from it.
+
+**Fix applied:**
+
+- Added/corrected `color: var(--ink);` on `.nav-logo svg` and `.footer-logo svg` across `skept-base-template.html`, `index.html`, `history.html`, `verify.html`, `settings.html`, and `verdict-worker.js`.
+- No changes to the `<symbol>` definition, SVG paths, or other `currentColor` icons (chevron, gear, sign-out) — those correctly keep inheriting softer grey.
+- 12 edits across 6 files. Committed `76e50b2`, pushed to `main`.
+
+**Visual confirmation:**
+
+- Confirmed via Chrome Extension screenshot on `history.html` — loupe mark renders solid `#1a1a1a` in both nav and footer.
+- Empty-state illustration (large loupe mark, "Nothing here yet") reviewed and approved as-is — no changes needed there.
+- **Not yet confirmed:** `skept-verdict` Worker live deploy and visual check on a real `/v/{uuid}` permalink page. Worker deploy is a separate step from Pages auto-deploy and hasn't been verified post-fix — code-level diff confirms the same fix was applied to `verdict-worker.js`, but runtime rendering is unverified.
+
+**Follow-up produced:** Claude Code prompt to update `CLAUDE.md`'s §3.76 open-items row, conditional on verdict Worker confirmation (close out fully if confirmed; otherwise update to reflect partial completion).
+
+**Open items at session close:** §3.76 (verdict Worker live deploy + visual confirmation only — code fix applied and committed), §3.77 (segment duration 4s→5s — cost/margin + brief fold-in), §3.78 (founder cohort coupon tier eligibility), §3.79 (subject list growth — subject_candidates table; review surface now unblocked by §3.80), §3.81 (per-frame timestamp capture — same unblock), §3.84 (Railway permanent-service doc cleanup), §3.85 (magic link email rebrand), §3.88 (Founder/Admin privilege matrix)
+**Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
+
+---
+
 ## 2026-06-30
 
 ### Admin dashboard — live and operational
@@ -15,6 +144,7 @@
   - Sidebar Users section now has Free/Lite/Plus/Pro/Max tier sub-items (indented under "All users"), each filtering the user table via GET /admin/api/users?tier=X. Active tier highlighted in sidebar, synced with in-view dropdown.
   - Overview dashboard now has a period selector (7d/30d/3m/6m/9m/12m/all) next to the page title, re-fetching GET /admin/api/overview?period=X and updating subtitle + all stat cards. Worker endpoint updated to accept period param (previously hardcoded to 30d).
 - Admin dashboard considered feature-complete for v1 — Dashboard, Job log, Signals, Cost, Users (with tier filtering), Founder cohort views all live and wired to real D1 data.
+- Note: Founder cohort view still queries the now-superseded `founder_cohort` boolean (§3.87 retired this column in favour of `role`). Query needs updating to `role = 'founder'` — flagged, not yet actioned.
 
 ---
 
@@ -29,25 +159,71 @@
 - **Privilege matrix confirmed** — five subscription tiers (Free/Lite/Plus/Pro/Max) locked with one edit: seal generation and permalink access moved from Plus to Pro. Plus retains detailed evidence output, export to PDF, viewed history tab, full evidence history.
 - **Role column live** — `role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'founder', 'admin'))` added to `skept-auth / users` via migration `0003_add_role_to_users.sql` (commit 605515a). `idx_users_role` index created. Both existing users (is_admin=1) set to `role='admin'`. `is_admin` column now superseded — flagged for drop in future migration.
 - **Role architecture** — `role` is orthogonal to `tier`. Admin and Founder are access roles, not subscription tiers. A user can be `role='founder'` + `tier='max'` simultaneously. `founder_cohort BOOLEAN` column (previously queued) retired — superseded by role field.
-- **Admin privileges (direction agreed)** — bypasses all quota checks; admin dashboard access (`skept.co/admin`); manual tier override; aggregate usage stats. Full spec pending (§3.79).
-- **Founder privileges (decision pending)** — structural approach confirmed (`role='founder'` + `tier='max'`). Specific privilege set beyond Max features not yet decided. Logged as §3.79 for next decision session.
+- **Admin privileges (direction agreed)** — bypasses all quota checks; admin dashboard access (`skept.co/admin`); manual tier override; aggregate usage stats. Full spec pending (§3.88).
+- **Founder privileges (decision pending)** — structural approach confirmed (`role='founder'` + `tier='max'`). Specific privilege set beyond Max features not yet decided. Logged as §3.88 for next decision session.
 
 **Checklist updates:**
-- §3.77 closed — seal/permalink gate moved to Pro
-- §3.78 closed — role column live
-- §3.79 opened — Founder + Admin privilege matrix, decision pending
+- §3.86 closed — seal/permalink gate moved to Pro
+- §3.87 closed — role column live
+- §3.88 opened — Founder + Admin privilege matrix, decision pending
+
+**Numbering note:** §3.77–§3.79 were reused this session for the three items above before this consolidation pass caught the collision — those numbers were already assigned (29 Jun planning session, below) to segment duration, founder cohort coupon, and subject list growth respectively, all still open at the time. Renumbered to §3.86–§3.88 to resolve. See consolidation checklist for the full restored open-item set.
 
 **Brief updates queued (not yet built):**
-- Pricing Summary v2.2 → v2.3: Plus feature list (seal/permalink removed)
+- Pricing Summary v2.2 → v2.3: Plus feature list (seal/permalink removed); also carries the still-open §3.77 segment-duration cost/margin revision
 - Project Brief v0.24 → v0.25: §11.5, §16.4
 - Engineers Brief v0.21 → v0.22: §4.10 (seal gate Pro+, role field documented)
 
-**Open items at session close:** §3.76 (logo SVG colour fix), §3.79 (Founder/Admin privilege matrix)
+**Open items at session close:** §3.76 (logo SVG colour fix), §3.77 (segment duration 4s→5s — cost/margin + brief fold-in), §3.78 (founder cohort coupon tier eligibility), §3.79 (subject list growth — subject_candidates table; review surface now unblocked by §3.80), §3.81 (per-frame timestamp capture — same unblock), §3.84 (Railway permanent-service doc cleanup), §3.85 (magic link email rebrand), §3.88 (Founder/Admin privilege matrix)
 **Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
 
 ---
 
+## 29 Jun 2026 — Planning session: pricing, architecture, product features
 
+**Session type:** Planning and product decisions — no code changes. All items queued for checklist.
+
+---
+
+**Decisions locked this session:**
+
+**Segment duration — 4s → 5s across all tiers (§3.77)**
+Segment duration increased from 4s to 5s across all tiers. Segment count unchanged. Total analysis seconds: Free/Lite 5s (1×5s), Plus/Pro 10s (2×5s), Max 15s (3×5s). Max now hits the 15s clip cap exactly. Worker logic unchanged — references tier → segment count only; duration is a constant. Rationale: improved reliability at lower tiers drives acquisition and upgrades. Margin impact accepted (Plus/Pro full-cap margin drops from 41.3% → 26.7%; Max from 34.0% → 17.5% — real-world margin materially better as most users do not hit full cap).
+
+Revised full-cap cost/run: Free/Lite $0.55 (5s × $0.11), Plus/Pro $1.10 (10s × $0.11), Max $1.65 (15s × $0.11). Pricing summary v2.2 requires update.
+
+**Founder cohort coupon — tier-variable, Plus floor (§3.78)**
+Founder cohort Stripe coupon changed from Max-tier-specific to tier-variable. Applicable to Plus, Pro, and Max tiers only. Lite and Free excluded. Cohort member selects their preferred tier at checkout; discount applies to that tier's price. Rationale: removes price barrier, ensures cohort accesses meaningful feature set (seal generation, permalinks, full detection depth). Preferred outcome remains Max but not enforced. Implementation: single Stripe coupon code; tier eligibility enforced at point of coupon distribution (checkout link directs to Plus/Pro/Max prices only).
+
+**Usage-triggered subject list growth (§3.79)**
+When NER extracts a PERSON entity not in the current curated Wikidata subject list, log it to a new `subject_candidates` table (name, wikidata_qid nullable, hit_count, first_seen, status: pending/approved/rejected). Candidates surfacing at 3+ distinct runs queue for curator review via admin layer. Approved → promoted to live subject list. Rejected → suppressed. Fully passive — list self-prioritises around figures actually being targeted on platforms. Clip-centric framing: matching unit is the clip (perceptual hash), not the account. Account context stored alongside for richer Source Details output. D1 table: `subject_candidates` on skept-analysis.
+
+**Admin view — priority build (§3.80)**
+Internal dashboard for founder/admin use. Subject candidate queue (§3.79) is the first functional requirement that makes this necessary. Other likely surfaces: job volume, error rates, flagged verdicts, user management. To be designed and scoped in a dedicated session.
+
+**Per-frame timestamp data — admin-only capture (§3.81)**
+Per-frame timestamp + score + certainty data from Resemble response to be captured and stored internally. Not surfaced to users (would be misleading given segment-only sampling). Admin layer only. Purpose: sampling strategy calibration, understanding where in clips manipulation signal concentrates, empirical basis for future sampling adjustment. Implementation deferred until admin view is scoped.
+
+**Resemble `metrics.consistency` — evidence card candidate (§3.82)**
+`metrics.consistency` from Resemble response currently unused. Measures how uniformly suspicion is distributed across the clip. High score + low consistency = manipulation localised to specific segments. Candidate for a future evidence card note ("manipulation signal concentrated vs distributed"). Deferred — log for Phase 2 evidence card enhancement.
+
+**LLM-generated verdict summary — Pro/Max tiers (§3.83)**
+Post-analysis, structured verdict data (video score, audio score, certainty scalar, Resemble label, fusion result, source signals) passed to an LLM to generate a plain-English contextual summary. Displayed as a narrative summary card on the verdict page. Gated to Pro and Max tiers. Free/Lite/Plus receive templated copy. Phase 2 candidate.
+
+**Railway architecture — confirmed permanent utility service (§3.84)**
+Railway retained indefinitely as a single-purpose yt-dlp ingestion microservice. Not a migration target — remains as a $5/month utility pipe for clip download and R2 upload. All other services are on Cloudflare. This is the confirmed long-term architecture; "Railway decommission" in prior entries meant decommissioning as the primary stack, not full removal. Fly.io evaluated and rejected — no free tier, ~$8–25/month for equivalent workload, migration cost not justified.
+
+**Magic link email rebrand (§3.85)**
+Current email uses Resend default dark template — no brand palette, plain text "Skept" header, generic layout. To be rebranded: CREAM (#FAF8F5) background, INK (#1A1A1A) text, loupe mark SVG at top, AMBER (#DFB87B) CTA button, sender display name set to "Skept" (not bare noreply@skept.co), footer with ignore copy. Implementation: update `html` and `from` fields in skept-auth Worker Resend call. Claude Code prompt to be produced at terminal session.
+
+---
+
+**Open items at session close:** §3.76 (logo SVG colour fix), §3.77–§3.85 (all new — queued for checklist)
+**Baseline:** Project Brief v0.24, Engineers Brief v0.21, Legal Brief v0.10, Pricing Summary v2.2
+
+---
+
+## 29 Jun 2026 — Base template established; nav/footer shell locked
 
 **Session type:** UI design — canonical base template, nav pattern decision.
 
