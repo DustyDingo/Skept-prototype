@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 29 Jun 2026 (session 5)**
+**Last updated: 30 Jun 2026 (session 1)**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -109,36 +109,19 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 **Current baselines:** Project Brief v0.24 (29 Jun 2026) · Engineers Brief v0.21 (29 Jun 2026)
 
-All checklist items resolved. No open items as of 29 Jun 2026 (session 5). Nav/footer standardisation (§3.76 / §3.77) pending Claude Code execution only.
-
-Previously open items now confirmed closed via consolidation checklist:
-- §3.31 — Trump QID / wordninja segmentation: confirmed via Extension (27 Jun)
-- §3.44 — Audio evidence card body text: closed (24 Jun)
-- §3.45 — No-speech path: closed (26 Jun)
-- §3.50 — Cloudflare production stack steps 6–7: step 6 complete (billing Workers live); step 7 (landing page swap) deferred to launch day (29 Jun)
-- §3.56 — Pillar active count on audio_dubbing_pattern path: closed (26 Jun)
-- §3.58 — ref_53 DOM label / dubbing-pattern render: closed (26 Jun)
-- §3.59 — No-audio-stream vs no-speech copy: closed (27 Jun)
-- §3.60 — Audio row in wrong stage block: closed (26 Jun)
-- §3.62 — Audio score divergence disclosure: confirmed stale, fixed commit 49c0fd6 (26 Jun)
-- §3.63 — High-variance flag not surfaced: confirmed in code and EB §3.1 (27 Jun)
-- §3.66 — URL validation before yt-dlp: closed (26 Jun)
-- §3.69 — Certainty scalar suppression evidence card note: closed, deployment 63384a23 (27 Jun)
-- §3.70 — Audio max(raw, 0.0) calibration monitoring: note only, no active action (27 Jun)
-- §3.72 — video_job_audio_label not forwarded: closed (27 Jun)
-- §3.76 — Logo SVG colour fix + nav/footer standardisation: absorbed into full nav standardisation pass; Claude Code prompt issued (29 Jun)
-
 | Item | Description |
 |---|---|
-| §3.77 | Segment duration updated 4s → 5s across all tiers. Pricing summary v2.2 requires update to v2.3. Engineers Brief §4.10 and Project Brief §11.5 require update. |
-| §3.78 | Founder cohort Stripe coupon changed to tier-variable. Applicable to Plus/Pro/Max only. Single coupon code; tier eligibility enforced at checkout link distribution point. |
-| §3.79 | Usage-triggered subject list growth. Create `subject_candidates` table in skept-analysis D1 (name TEXT, wikidata_qid TEXT nullable, hit_count INTEGER DEFAULT 1, first_seen INTEGER, status TEXT DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected'))). Update NER pipeline: on PERSON entity extraction, if absent from live list, upsert to subject_candidates (increment hit_count on conflict). Admin review surface deferred to §3.80. |
-| §3.80 | ~~Admin view — priority build.~~ CLOSED 30 Jun 2026. skept-admin live at skept.co/admin — Dashboard (period selector, 7d–all), Job log, Signals, Cost, Users (tier sidebar filters), Founder cohort. ADMIN_TOKEN gate. |
-| §3.81 | Per-frame timestamp + score + certainty data from Resemble response to be captured and stored internally. Admin-only. Purpose: sampling strategy calibration. Deferred until admin view scoped (§3.80). |
-| §3.82 | Resemble `metrics.consistency` unused. Candidate for future evidence card note ("manipulation signal concentrated vs distributed"). Phase 2 deferred — no action. |
-| §3.83 | LLM-generated verdict summary for Pro/Max tiers. Post-analysis structured data → plain-English narrative card on verdict page. Free/Lite/Plus receive templated copy. Phase 2 deferred — no action. |
-| §3.84 | Railway confirmed permanent yt-dlp utility service. Fly.io evaluated and rejected. CLAUDE.md and Engineers Brief §4.2 to be updated. |
-| §3.85 | Magic link email rebrand. Current email uses Resend default dark template. Target: CREAM (#FAF8F5) bg, INK (#1A1A1A) text, loupe mark SVG at top, AMBER (#DFB87B) button, sender display name "Skept". Update `html` and `from` fields in skept-auth Worker Resend call. |
+| §3.70 | Audio `max(raw, 0.0)` formula structurally floors near 0% on clean audio (Resemble clusters near 0.0, not -1.0) — monitoring only, no action pending until more live data |
+| §3.76 | Logo SVG colour fix: loupe mark renders grey in nav on five surfaces (index.html, history.html, verify.html, settings.html, verdict-worker.js). Fix: `color: var(--ink)` explicit on SVG element in nav markup |
+| §3.77 | Segment duration 4s → 5s decided 29 Jun 2026 — NOT implemented. Code still uses 4s. Do not assume 5s without confirming |
+| §3.78 | Founder cohort Stripe coupon (tier-variable, Plus/Pro/Max, Plus floor) decided 29 Jun 2026 — NOT implemented. Stripe dashboard coupon config still pending |
+| §3.79 | Usage-triggered subject list growth — `subject_candidates` D1 table + NER pipeline hook not yet built. Review surface (admin dashboard, see below) is now live and unblocked |
+| §3.81 | Per-frame timestamp/score/certainty capture (admin-only, internal calibration) — storage approach not decided, not yet built |
+| §3.82 | Resemble `metrics.consistency` unused — Phase 2 evidence card candidate, no action pending |
+| §3.83 | LLM-generated verdict summary (Pro/Max tiers) — Phase 2 candidate, no action pending |
+| §3.84 | Railway confirmed PERMANENT (30 Jun 2026) — yt-dlp ingestion + R2 upload microservice only, $5/month. NOT being decommissioned. See Deploy section |
+| §3.85 | Magic link email rebrand (CREAM/INK/AMBER tokens) — HTML template not yet built; live email still uses Resend's default dark template |
+| §3.88 | Founder + Admin privilege matrix — role column live in D1, specific privileges (admin quota bypass, founder perks) not yet specced or built |
 
 ---
 
@@ -154,12 +137,12 @@ Previously open items now confirmed closed via consolidation checklist:
 ## Deploy
 
 **Cloudflare Pages (production):** Push to `main` → auto-deploy. No manual deploy needed for frontend changes.
-**Railway (prototype / yt-dlp microservice):** Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
-**Production stack:** Cloudflare Pages + Workers + D1 + R2 + KV. Live at skept.co. Railway retained permanently as a single-purpose yt-dlp ingestion microservice ($5/month Hobby plan) — not being decommissioned. All other services are on Cloudflare.
+**Railway:** Confirmed permanent (30 Jun 2026, §3.84) — single-purpose yt-dlp ingestion + R2 upload microservice, $5/month Hobby plan. NOT being decommissioned. Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
+**Production stack:** Cloudflare Pages + Workers + D1 + R2 + KV — LIVE (see Current build state below). Railway remains permanently alongside it as the yt-dlp utility pipe; it is not a migration target.
 
 ---
 
-## Current build state (as of 29 Jun 2026)
+## Current build state (as of 30 Jun 2026)
 
 | Component | Status |
 |---|---|
@@ -174,7 +157,7 @@ Previously open items now confirmed closed via consolidation checklist:
 | Verdict Worker (`skept-verdict`) | LIVE at skept.co/v/* — server-rendered verdict page, four states, 404 state |
 | Base template | `cloudflare/templates/skept-base-template.html` — canonical nav + footer shell, both auth states, account dropdown. All new pages derive from this file. |
 | Nav/footer standardisation | Claude Code prompt issued — pending execution. Applies canonical nav/footer to index.html, verify.html, history.html, settings.html, verdict-worker.js in one commit. Closes §3.76. |
-| Admin dashboard (`skept-admin`) | LIVE at skept.co/admin — auth gate (is_admin = 1), 7 API routes, canonical nav/footer. Stat cards show zeroes until production analysis jobs flow through. |
+| Admin dashboard (`skept-admin`) | LIVE at skept.co/admin — Overview, Job log, Signals, Cost, Users (tier-filtered), Founder cohort views. Gated by static ADMIN_TOKEN, not by the new `role='admin'` field — these two gating mechanisms are not yet unified (§3.88) |
 
 ---
 
@@ -200,8 +183,7 @@ Auto-deploys on push to main — no manual deploy needed for frontend changes.
 - skept-verify → skept.co/api/verify/*
 - skept-history → skept.co/api/history/*
 - skept-verdict → skept.co/v/* → cloudflare/verdict-worker.js → wrangler-verdict.toml (route registered manually in Cloudflare dashboard)
-- skept-admin → skept.co/admin* → cloudflare/admin-worker.js → cloudflare/wrangler-admin.toml
-- skept-admin → skept.co/api/admin/* → cloudflare/admin-worker.js → cloudflare/wrangler-admin.toml
+- skept-admin → skept.co/admin* (frontend page) + skept.co/api/admin/* (Worker API) — ADMIN_TOKEN secret, sessionStorage token-gate, NOT tier-gated, NOT yet tied to role='admin'
 
 ---
 
@@ -332,11 +314,14 @@ Three billing Workers are live on the Cloudflare production stack:
 ### D1 schema state (post-migration)
 - `skept-auth / users`: tier CHECK includes 'lite'; stripe_customer_id column present
 - `skept-auth / users`: is_admin INTEGER NOT NULL DEFAULT 0 added (29 Jun 2026)
+- `skept-auth / users`: `role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'founder', 'admin'))` added via migration `0003_add_role_to_users.sql` (commit 605515a); `idx_users_role` index created. `is_admin` column now superseded by `role` — not yet dropped, do not write new code against `is_admin`.
 - `skept-analysis / quota_usage`: quota_limit (default 5), topup_credits (default 0), topup_expires_at added
 - `skept-analysis / analysis_history`: tier_at_creation CHECK includes 'lite'
 
 ### Tier → quota_limit mapping
 free=5, lite=10, plus=20, pro=40, max=60
+
+**Feature gates:** Seal generation and permalink access require Pro or above (moved from Plus, 30 Jun 2026, §3.86). Do not gate these at Plus.
 
 ### RevenueCat entitlement identifiers (note: contain spaces)
 'Skept Lite' → 'lite', 'Skept Plus' → 'plus', 'Skept Pro' → 'pro', 'Skept Max' → 'max'
