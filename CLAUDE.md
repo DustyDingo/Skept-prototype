@@ -113,7 +113,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 |---|---|
 | §3.70 | Audio `max(raw, 0.0)` formula structurally floors near 0% on clean audio (Resemble clusters near 0.0, not -1.0) — monitoring only, no action pending until more live data |
 | §3.76 | Logo SVG colour fix: code fix applied and committed (76e50b2) to all six surfaces — index.html, history.html, verify.html, settings.html, skept-base-template.html, verdict-worker.js. Visually confirmed on history.html. Verdict Worker live deploy + visual confirmation pending. |
-| §3.77 | Segment duration 4s → 5s decided 29 Jun 2026 — NOT implemented. Code still uses 4s. Do not assume 5s without confirming |
+| §3.77 | Segment duration 4s → 5s implemented (commit e4703ad, 30 Jun 2026). deepfake.py: `-t 5`, threshold `> 10`, strategy `start_mid_5s`. verify-worker.js: `SEGMENT_DEFS.duration: 5`, run_depth `5s/10s/15s`. main.py UI label updated to `10s of`. Note: verify-worker.js previously had `duration: 6` (not 4) — also corrected to 5. |
 | §3.78 | Founder cohort Stripe coupon (tier-variable, Plus/Pro/Max, Plus floor) decided 29 Jun 2026 — NOT implemented. Stripe dashboard coupon config still pending |
 | §3.79 | Usage-triggered subject list growth — `subject_candidates` D1 table + NER pipeline hook not yet built. Review surface (admin dashboard, see below) is now live and unblocked |
 | §3.81 | Per-frame timestamp/score/certainty capture (admin-only, internal calibration) — storage approach not decided, not yet built |
