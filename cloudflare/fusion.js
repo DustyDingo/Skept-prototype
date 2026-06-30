@@ -37,11 +37,15 @@ export function fuse(pillars) {
     exclusionReasons.push('audio_dubbing_pattern');
   }
 
-  // Null-score pillars are excluded
+  // Null-score pillars are excluded; propagate pre-set excluded_reason (e.g. non_human_content)
   for (const [name, p] of Object.entries(pillars)) {
     if (p.score === null) {
       detail[name].excluded = true;
       detail[name].contribution = 0.0;
+      if (p.excluded_reason) {
+        detail[name].excluded_reason = p.excluded_reason;
+        exclusionReasons.push(p.excluded_reason);
+      }
     }
   }
 

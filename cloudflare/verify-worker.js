@@ -104,7 +104,7 @@ async function callResemble(apiKey, clipUrl) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ url: clipUrl, content_type: 'video' }),
+    body: JSON.stringify({ url: clipUrl, content_type: 'video', intelligence: true }),
   });
 
   if (!res.ok) throw new Error(`Resemble API error: ${res.status}`);
@@ -210,6 +210,17 @@ export default {
       const audioScoreRaw = item?.metrics?.aggregated_score ?? null;
       const c2paResult = item?.c2pa ?? null;
 
+      // Intelligence layer — liveness signal for non-human content gate (§3.91)
+      const intelligence = item?.intelligence ?? null;
+      // Temporary diagnostic: confirm exact field path from `wrangler tail` on next live run
+      console.log('[verify-worker] resemble intelligence layer:', JSON.stringify(intelligence));
+      // TODO: confirm exact field path against a live wrangler tail run
+      const livenessLabel =
+        typeof intelligence?.liveness === 'string'
+          ? intelligence.liveness
+          : (intelligence?.liveness?.label ?? null);
+      const isNotRealPerson = livenessLabel === 'not_real_person';
+
       // Certainty scalar: min(SKEPT_FRAMES, resemble_frame_count) / SKEPT_FRAMES (§3.75, deepfake.py:222)
       const SKEPT_FRAMES = 6;
       const videoChildren = item?.video_metrics?.children ?? [];
@@ -219,12 +230,14 @@ export default {
       );
       const resembleFrameCount = frameData.length;
 
-      // Non-human content guard: ≤1 frame → deepfake pillar excluded (§3.89, deepfake.py:226)
+      // Non-human content guard: ≤1 frame OR Resemble liveness=not_real_person → deepfake pillar excluded (§3.91)
       let videoSuspicion;
+      let deepfakeExcludedReason = null;
       if (videoScoreRaw === null) {
         videoSuspicion = null;
-      } else if (resembleFrameCount <= 1) {
+      } else if (resembleFrameCount <= 1 || isNotRealPerson) {
         videoSuspicion = null;
+        deepfakeExcludedReason = 'non_human_content';
       } else {
         const certainty = Math.min(SKEPT_FRAMES, resembleFrameCount) / SKEPT_FRAMES;
         videoSuspicion = Math.max(0.0, Math.min(1.0, videoScoreRaw * certainty));
@@ -234,7 +247,7 @@ export default {
 
       // Step 6 — Fusion
       const fuseResult = fuse({
-        deepfake: { score: videoSuspicion, weight: 0.60 },
+        deepfake: { score: videoSuspicion, weight: 0.60, excluded_reason: deepfakeExcludedReason },
         audio:    { score: audioSuspicion, weight: 0.35 },
         c2pa:     { score: null,           weight: 0.40 },
       });
