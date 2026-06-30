@@ -24,15 +24,6 @@ function derivePlatform(url) {
   return 'unknown';
 }
 
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-function rawToSuspicion(raw) {
-  return clamp((raw + 1.0) / 2.0, 0.0, 1.0);
-}
-
-
 function getCookieValue(request, name) {
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
@@ -219,9 +210,27 @@ export default {
       const audioScoreRaw = item?.metrics?.aggregated_score ?? null;
       const c2paResult = item?.c2pa ?? null;
 
-      const videoSuspicion = videoScoreRaw !== null ? rawToSuspicion(videoScoreRaw) : null;
-      // No-speech sentinel: both audio scores -1.0 → null
-      const audioSuspicion = audioScoreRaw === -1.0 ? null : (audioScoreRaw !== null ? rawToSuspicion(audioScoreRaw) : null);
+      // Certainty scalar: min(SKEPT_FRAMES, resemble_frame_count) / SKEPT_FRAMES (§3.75, deepfake.py:222)
+      const SKEPT_FRAMES = 6;
+      const videoChildren = item?.video_metrics?.children ?? [];
+      const chunks = videoChildren[0]?.children ?? [];
+      const frameData = chunks.flatMap(chunk =>
+        (chunk.children ?? []).filter(f => f.score != null && f.certainty != null)
+      );
+      const resembleFrameCount = frameData.length;
+
+      // Non-human content guard: ≤1 frame → deepfake pillar excluded (§3.89, deepfake.py:226)
+      let videoSuspicion;
+      if (videoScoreRaw === null) {
+        videoSuspicion = null;
+      } else if (resembleFrameCount <= 1) {
+        videoSuspicion = null;
+      } else {
+        const certainty = Math.min(SKEPT_FRAMES, resembleFrameCount) / SKEPT_FRAMES;
+        videoSuspicion = Math.max(0.0, Math.min(1.0, videoScoreRaw * certainty));
+      }
+      // Audio: max(raw, 0.0) passthrough; -1.0 → null no-speech sentinel (§3.89, audio.py:56)
+      const audioSuspicion = audioScoreRaw === -1.0 ? null : (audioScoreRaw !== null ? Math.max(0.0, audioScoreRaw) : null);
 
       // Step 6 — Fusion
       const fuseResult = fuse({
@@ -240,10 +249,12 @@ export default {
 
       function mapVerdict(fusionVerdict) {
         const map = {
-          likely_authentic:   'authentic',
-          inconclusive:       'ambiguous',
-          likely_manipulated: 'manipulated',
-          insufficient_data:  'ambiguous',
+          authentic:         'authentic',
+          clean:             'authentic',
+          ambiguous:         'ambiguous',
+          suspicious:        'manipulated',
+          manipulated:       'manipulated',
+          insufficient_data: 'ambiguous',
         };
         return map[fusionVerdict] ?? 'ambiguous';
       }

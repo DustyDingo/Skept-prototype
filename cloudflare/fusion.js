@@ -65,15 +65,20 @@ export function fuse(pillars) {
     };
   }
 
-  const score = numerator / denominator;
+  const score = Math.round((numerator / denominator) * 1000) / 1000;
 
+  // 5-band thresholds matching backend/analysers/fusion.py:152-186 (§3.89)
   let verdict;
-  if (score >= 0.70) {
-    verdict = 'likely_manipulated';
-  } else if (score >= 0.40) {
-    verdict = 'inconclusive';
+  if (score < 0.20) {
+    verdict = 'authentic';
+  } else if (score < 0.50) {
+    verdict = 'clean';
+  } else if (score === 0.50) {
+    verdict = 'ambiguous';
+  } else if (score < 0.80) {
+    verdict = 'suspicious';
   } else {
-    verdict = 'likely_authentic';
+    verdict = 'manipulated';
   }
 
   return {
