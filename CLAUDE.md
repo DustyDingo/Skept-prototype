@@ -38,6 +38,9 @@ Weighted ensemble over verdict-determining pillars only.
 **Asymmetric exclusion — audio-dubbing pattern:**
 When `deepfake_final < 0.10 AND audio_final > 0.60`, deepfake is excluded from both numerator and denominator. `excluded_reason: audio_dubbing_pattern` written to pillar dict. `contribution: 0.0`. Denominator collapses to 0.35. This must be functional in the fusion calculation — not decorative.
 
+**Asymmetric exclusion — non-human content (§3.91, commit 66d6b43, 30 Jun 2026):**
+When Resemble's Intelligence liveness signal indicates `not_real_person`, the deepfake pillar is excluded from both numerator and denominator: `videoSuspicion = null`, `deepfakeExcludedReason = 'non_human_content'`. Parallel in structure to `audio_dubbing_pattern`. `fusion.js` propagates this reason into the pillar detail (`detail.deepfake.excluded_reason`) and pushes it to `exclusionReasons` via the null-score pillar loop (lines 40–49 of `fusion.js`). The low-frame-count guard (`resembleFrameCount <= 1`) is retained alongside the liveness check — both branches now set `deepfakeExcludedReason = 'non_human_content'`. **Liveness field path is best-effort/unconfirmed** — no live Intelligence response has been observed yet; a one-shot `console.log('[verify-worker] resemble intelligence layer:', JSON.stringify(intelligence))` is in place to read off `wrangler tail` on the first live run. A TODO comment marks the gate pending field-path confirmation. Runtime confirmation of the `item.intelligence` structure folds into the §3.90 first-live-run `wrangler tail`.
+
 **Verdict bands (5-band — source of record: `backend/analysers/fusion.py`, confirmed §3.89, 30 Jun 2026):**
 - Authentic:    0.00 – <0.20
 - Clean:        0.20 – <0.50   (label: "Ambiguous")
@@ -58,6 +61,8 @@ Note: CLAUDE.md previously showed 3 bands (0.30 / 0.60). That was wrong — `fus
 ## Resemble AI integration
 
 - Endpoint: `https://app.resemble.ai/api/v2/detect` (confirmed §3.90, 30 Jun 2026 — `deepfake.py` is the canonical source; Worker was previously using wrong subdomain/path `https://api.resemble.ai/v2/detect`)
+  - **Submission method — UNCONFIRMED for the Worker (§3.90, most likely first-run failure point):** `deepfake.py` (the only confirmed-working caller) submits via **multipart file upload** (`df_sampled.mp4`). The deployed verify Worker submits a **URL-based JSON body** (`{ url: clipUrl, content_type: 'video', intelligence: true }`). Whether `/api/v2/detect` accepts URL-based requests is unconfirmed and cannot be determined without a live end-to-end call. If the first live run rejects the URL body (non-200 from Resemble), the Worker must be switched to multipart: fetch the R2 object → upload as file, mirroring the prototype path in `deepfake.py`.
+- Worker Resemble request body includes `intelligence: true` — required to return the Intelligence/liveness layer used by the §3.91 non-human gate.
 - Single API call per job (`df_sampled.mp4`). No separate audio.wav submission.
 - Audio score embedded in video job response: `item["metrics"]["aggregated_score"]`
 - Audio score formula: `score = max(aggregated_score, 0.0)` — Resemble's negative range means "definitely real"; negatives floor to 0.0. No `(raw+1)/2` conversion applied. Pending live data validation across more clip types (§3.70).
@@ -127,8 +132,8 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.85 | Magic link email rebrand (CREAM/INK/AMBER tokens) — HTML template not yet built; live email still uses Resend's default dark template |
 | §3.88 | Founder + Admin privilege matrix — role column live in D1, specific privileges (admin quota bypass, founder perks) not yet specced or built |
 | §3.89 | verify Worker scoring reconciled to backend (commit cd5df37). Runtime verification still pending — requires a real end-to-end call through a Pro/Max session. Pipeline structurally unblocked by §3.90. |
-| §3.90 | verify pipeline end-to-end unblocked (commit 2befcd8, 30 Jun 2026): D1 CHECK constraints fixed (migration-analysis-2.sql applied to live DB), Resemble URL corrected, permalink_uuid wired, VERDICT_META updated, share link fixed. Worker redeployed. Runtime verify still needed. |
-| §3.91 | Non-human content reaches deepfake pillar — liveness gate (`not_real_person` → score=None) not yet wired. Pair with §3.20 (Sightengine synthetic gap). |
+| §3.90 | verify pipeline end-to-end unblocked (commit 2befcd8, 30 Jun 2026): D1 CHECK constraints fixed (migration-analysis-2.sql applied to live DB), Resemble URL corrected, permalink_uuid wired, VERDICT_META updated, share link fixed. Worker redeployed. **§3.90 is now the gating milestone for runtime verification of §3.89 (scoring math), §3.90 (its own fixes), and §3.91 (liveness gate) — all three confirm on the same first real `/api/verify` call.** Two specific confirmations required off that `wrangler tail` run: (A) does `/api/v2/detect` accept a URL-based JSON body, or must the Worker switch to multipart (fetch R2 object → upload)? (B) what is the actual `item.intelligence` field structure for the liveness path? |
+| §3.91 | Liveness gate code-complete (commit 66d6b43, 30 Jun 2026): `intelligence: true` added to Resemble request body; guard now `resembleFrameCount <= 1 \|\| isNotRealPerson`; `non_human_content` propagated through `fusion.js` pillar detail + exclusionReasons. Field path best-effort/unconfirmed — one-shot console.log + TODO in place; runtime confirmation folds into §3.90 first live run. Still pair with §3.20 (Sightengine synthetic gap). |
 
 ---
 
@@ -157,7 +162,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | History page (`history.html`) | LIVE at skept.co/history — cream shell, quota strip, filter chips, card list, delete flow |
 | History Worker | LIVE at skept.co/api/history/* |
 | Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
-| Verify Worker | LIVE at skept.co/api/verify/* — scoring reconciled to backend (§3.89); D1 CHECK constraints fixed, permalink_uuid wired, Resemble URL corrected (§3.90, 30 Jun 2026). Runtime verify still pending (requires live Pro/Max session). |
+| Verify Worker | LIVE at skept.co/api/verify/* — scoring reconciled to backend (§3.89); D1 CHECK constraints fixed, permalink_uuid wired, Resemble URL corrected (§3.90, 30 Jun 2026); §3.91 liveness gate (`non_human_content`) deployed (commit 66d6b43, version f20b9445). §3.89 + §3.90 + §3.91 all share a single runtime blocker: the first live end-to-end call through a Pro/Max session (requires `wrangler tail`). |
 | Settings Worker | LIVE at skept.co/api/settings/* |
 | verify.html | LIVE — intake, analysing, and verdict views wired to /api/verify/* |
 | settings.html | Scaffold only — not yet built |
