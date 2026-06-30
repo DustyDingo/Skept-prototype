@@ -133,7 +133,7 @@ Previously open items now confirmed closed via consolidation checklist:
 | §3.77 | Segment duration updated 4s → 5s across all tiers. Pricing summary v2.2 requires update to v2.3. Engineers Brief §4.10 and Project Brief §11.5 require update. |
 | §3.78 | Founder cohort Stripe coupon changed to tier-variable. Applicable to Plus/Pro/Max only. Single coupon code; tier eligibility enforced at checkout link distribution point. |
 | §3.79 | Usage-triggered subject list growth. Create `subject_candidates` table in skept-analysis D1 (name TEXT, wikidata_qid TEXT nullable, hit_count INTEGER DEFAULT 1, first_seen INTEGER, status TEXT DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected'))). Update NER pipeline: on PERSON entity extraction, if absent from live list, upsert to subject_candidates (increment hit_count on conflict). Admin review surface deferred to §3.80. |
-| §3.80 | Admin view — priority build. Subject candidate queue (§3.79) is first functional requirement. Other surfaces: job volume, error rates, flagged verdicts, user management. Gated behind admin-only auth. Design session required before build. |
+| §3.80 | ~~Admin view — priority build.~~ CLOSED 30 Jun 2026. skept-admin live at skept.co/admin — Dashboard (period selector, 7d–all), Job log, Signals, Cost, Users (tier sidebar filters), Founder cohort. ADMIN_TOKEN gate. |
 | §3.81 | Per-frame timestamp + score + certainty data from Resemble response to be captured and stored internally. Admin-only. Purpose: sampling strategy calibration. Deferred until admin view scoped (§3.80). |
 | §3.82 | Resemble `metrics.consistency` unused. Candidate for future evidence card note ("manipulation signal concentrated vs distributed"). Phase 2 deferred — no action. |
 | §3.83 | LLM-generated verdict summary for Pro/Max tiers. Post-analysis structured data → plain-English narrative card on verdict page. Free/Lite/Plus receive templated copy. Phase 2 deferred — no action. |
@@ -174,6 +174,7 @@ Previously open items now confirmed closed via consolidation checklist:
 | Verdict Worker (`skept-verdict`) | LIVE at skept.co/v/* — server-rendered verdict page, four states, 404 state |
 | Base template | `cloudflare/templates/skept-base-template.html` — canonical nav + footer shell, both auth states, account dropdown. All new pages derive from this file. |
 | Nav/footer standardisation | Claude Code prompt issued — pending execution. Applies canonical nav/footer to index.html, verify.html, history.html, settings.html, verdict-worker.js in one commit. Closes §3.76. |
+| Admin dashboard (`skept-admin`) | LIVE at skept.co/admin — auth gate (is_admin = 1), 7 API routes, canonical nav/footer. Stat cards show zeroes until production analysis jobs flow through. |
 
 ---
 
@@ -199,6 +200,8 @@ Auto-deploys on push to main — no manual deploy needed for frontend changes.
 - skept-verify → skept.co/api/verify/*
 - skept-history → skept.co/api/history/*
 - skept-verdict → skept.co/v/* → cloudflare/verdict-worker.js → wrangler-verdict.toml (route registered manually in Cloudflare dashboard)
+- skept-admin → skept.co/admin* → cloudflare/admin-worker.js → cloudflare/wrangler-admin.toml
+- skept-admin → skept.co/api/admin/* → cloudflare/admin-worker.js → cloudflare/wrangler-admin.toml
 
 ---
 
@@ -212,6 +215,7 @@ npx wrangler@latest deploy --config cloudflare/wrangler-settings.toml
 npx wrangler@latest deploy --config cloudflare/wrangler-stripe-checkout.toml
 npx wrangler@latest deploy --config cloudflare/wrangler-stripe-webhook.toml
 npx wrangler@latest deploy --config cloudflare/wrangler-revenuecat-webhook.toml
+npx wrangler@latest deploy --config cloudflare/wrangler-admin.toml
 ```
 
 ---
@@ -256,6 +260,8 @@ frontend/
 cloudflare/
   templates/
     skept-base-template.html  — canonical nav/footer shell; copy for new pages; set data-auth="true|false" on <body>
+  admin-worker.js       — admin dashboard Worker (skept.co/admin + skept.co/api/admin/*)
+  wrangler-admin.toml   — bindings: SKEPT_AUTH_DB, SKEPT_ANALYSIS_DB, AUTH_SESSIONS KV
 ```
 
 ---
@@ -325,6 +331,7 @@ Three billing Workers are live on the Cloudflare production stack:
 
 ### D1 schema state (post-migration)
 - `skept-auth / users`: tier CHECK includes 'lite'; stripe_customer_id column present
+- `skept-auth / users`: is_admin INTEGER NOT NULL DEFAULT 0 added (29 Jun 2026)
 - `skept-analysis / quota_usage`: quota_limit (default 5), topup_credits (default 0), topup_expires_at added
 - `skept-analysis / analysis_history`: tier_at_creation CHECK includes 'lite'
 
