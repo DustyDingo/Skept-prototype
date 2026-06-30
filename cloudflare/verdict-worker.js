@@ -182,7 +182,7 @@ const SHARED_CSS = `
       gap: 0;
     }
     .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink); flex-shrink: 0; }
-    .nav-logo svg { display: block; }
+    .nav-logo svg { display: block; color: var(--ink); }
     .nav-wordmark { font-family: var(--goudy); font-style: italic; font-size: 21px; line-height: 1; color: var(--ink); letter-spacing: -0.01em; }
     .nav-spacer { flex: 1; }
     .nav-links { display: flex; align-items: center; gap: 4px; }
@@ -211,7 +211,7 @@ const SHARED_CSS = `
       flex-shrink: 0;
     }
     .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink-softer); }
-    .footer-logo svg { display: block; color: var(--ink-softer); }
+    .footer-logo svg { display: block; color: var(--ink); }
     .footer-wordmark { font-family: var(--goudy); font-style: italic; font-size: 16px; color: var(--ink-softer); line-height: 1; letter-spacing: -0.01em; }
     .footer-copy { font-size: 12px; color: var(--ink-softer); letter-spacing: 0.01em; }`;
 
