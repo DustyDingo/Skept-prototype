@@ -6,9 +6,9 @@ const WINDOW_SECONDS = 2_592_000; // 30 days
 // Maps tier depthSegment names to Worker segment objects.
 // 'mid' and 'tail' are sentinel strings; Worker resolves actual timestamps using clip duration.
 const SEGMENT_DEFS = {
-  head: { start: 0,      duration: 6 },
-  mid:  { start: 'mid',  duration: 6 },
-  tail: { start: 'tail', duration: 6 },
+  head: { start: 0,      duration: 5 },
+  mid:  { start: 'mid',  duration: 5 },
+  tail: { start: 'tail', duration: 5 },
 };
 
 function derivePlatform(url) {
@@ -248,7 +248,7 @@ export default {
         return map[fusionVerdict] ?? 'ambiguous';
       }
 
-      const run_depth = segments.length === 1 ? '6s' : segments.length === 2 ? '12s' : '18s';
+      const run_depth = segments.length === 1 ? '5s' : segments.length === 2 ? '10s' : '15s';
 
       await env.SKEPT_ANALYSIS_DB.prepare(`
         INSERT INTO analysis_history (
