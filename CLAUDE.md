@@ -112,7 +112,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | Item | Description |
 |---|---|
 | §3.70 | Audio `max(raw, 0.0)` formula structurally floors near 0% on clean audio (Resemble clusters near 0.0, not -1.0) — monitoring only, no action pending until more live data |
-| §3.76 | Logo SVG colour fix: loupe mark renders grey in nav on five surfaces (index.html, history.html, verify.html, settings.html, verdict-worker.js). Fix: `color: var(--ink)` explicit on SVG element in nav markup |
+| §3.76 | Logo SVG colour fix: code fix applied and committed (76e50b2) to all six surfaces — index.html, history.html, verify.html, settings.html, skept-base-template.html, verdict-worker.js. Visually confirmed on history.html. Verdict Worker live deploy + visual confirmation pending. |
 | §3.77 | Segment duration 4s → 5s decided 29 Jun 2026 — NOT implemented. Code still uses 4s. Do not assume 5s without confirming |
 | §3.78 | Founder cohort Stripe coupon (tier-variable, Plus/Pro/Max, Plus floor) decided 29 Jun 2026 — NOT implemented. Stripe dashboard coupon config still pending |
 | §3.79 | Usage-triggered subject list growth — `subject_candidates` D1 table + NER pipeline hook not yet built. Review surface (admin dashboard, see below) is now live and unblocked |
