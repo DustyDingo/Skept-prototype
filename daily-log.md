@@ -2,13 +2,84 @@
 
 ---
 
-## 30 Jun 2026 — §3.89 closed: verify Worker scoring reconciled to backend, deployed
+## 30 Jun 2026 (session 4) — §3.90 Cloudflare verify pipeline unblocked
 
-**Session type:** Code — Worker reconciliation and deployment. Single-item session: close the divergence found at end of session 1.
+**Session type:** Code — D1 migration + Worker fix + frontend fix. Identified and closed all confirmed causes of the 500 on every real `skept.co/api/verify` call.
 
 ---
 
-**§3.89 — CLOSED (30 Jun 2026, commits cd5df37 + e80f38d, Worker version 96b9e66a):**
+**Root cause (confirmed via live D1 query):** `analysis_history` had stale CHECK constraints from migration-analysis.sql:
+- `verdict_state IN ('likely_authentic','inconclusive','likely_manipulated')` — but verify-worker writes 'authentic', 'ambiguous', 'suspicious', 'manipulated'
+- `run_depth IN ('6s','12s','18s') DEFAULT '6s'` — but §3.77 locked values are '5s'/'10s'/'15s'
+
+Every INSERT threw a CHECK constraint violation → 500 response after the Resemble API call was already paid for.
+
+**Fixes applied (commit 2befcd8):**
+
+1. **D1 migration (migration-analysis-2.sql):** Recreated `analysis_history` (table confirmed 0 rows — non-destructive) with `verdict_state CHECK ('authentic','ambiguous','suspicious','manipulated')` and `run_depth CHECK ('5s','10s','15s') DEFAULT '5s'`. Applied directly to live skept-analysis DB via D1 MCP. Both indexes preserved.
+
+2. **verify-worker.js — Resemble URL:** `https://api.resemble.ai/v2/detect` → `https://app.resemble.ai/api/v2/detect` (matching `deepfake.py`, the only confirmed-working Resemble caller in the repo).
+
+3. **verify-worker.js — permalink_uuid:** `permalinkUuid = tierConfig.permalink ? crypto.randomUUID() : null` generated before INSERT; written to `permalink_uuid` column; included in JSON response. Pro/Max tier users now get a non-null UUID; `skept.co/v/{uuid}` can resolve a real result for the first time.
+
+4. **verify-worker.js — mapVerdict():** 'suspicious' now passes through as 'suspicious' (was collapsing to 'manipulated'), consistent with 5-band system and new CHECK.
+
+5. **frontend/src/verify.js — VERDICT_META:** Updated from stale 3-band keys (`likely_authentic`/`inconclusive`/`likely_manipulated`) to current 5-band keys (`authentic`/`clean`/`ambiguous`/`suspicious`/`manipulated`). Old keys caused all verdicts to fall through to grey "Unknown" rendering.
+
+6. **frontend/src/verify.js — share link:** Now uses `data.permalink_uuid` (only present for Pro/Max). Was using `data.analysis_id` which verdict-worker never queries by — every share link would have 404d.
+
+**Confirmed still open (cannot close until live test):** §3.89 runtime verification — still requires a real end-to-end call against a Pro/Max session. The pipeline is now structurally unblocked; runtime confirmation is next.
+
+**Investigation findings (FIX 3):**
+- INGEST_WORKER_URL var confirmed correct (Railway §3.84 endpoint).
+- callIngest() `{ key: "..." }` response confirmed: ingestion-worker.js line 100 returns exactly that.
+- Resemble URL mismatch confirmed unambiguous (see fix 2 above). Worker sends URL-based JSON body; deepfake.py sends multipart file upload — different submission method. URL-based submission cannot be confirmed without a live Resemble test.
+- Frontend auth: `submitVerify()` uses `credentials: 'include'` (cookie). `authenticate()` accepts skept_session cookie. Confirmed match.
+
+**Deployed:** `skept-verify` worker redeployed (version f20b9445). Frontend auto-deploys on push to main.
+
+**Open items at session close:** §3.89 (runtime verify — pipeline now unblocked), §3.91 (non-human liveness guard), §3.77 (EB/PB brief fold-ins only), §3.78 (Stripe coupon config), §3.45, §3.79, §3.81, §3.85, §3.88.
+**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
+
+---
+
+## 30 Jun 2026 (session 3) — §3.89 verification attempt; Cloudflare cutover identified as the gating milestone
+
+**Session type:** Verification attempt → root-cause scoping. Picked up the deployed §3.89 fix to confirm it at runtime; established why that isn't yet possible and reframed the blocker as a milestone.
+
+---
+
+**Why §3.89 is deployed but not verified:**
+
+- Re-ran the cartoon-cat clip twice through the prototype (job `4b69...` replay, then a genuinely fresh job `d08f...`). Both reproduced the prototype's correct `0.4443` audio passthrough / `0.9970` deepfake / `0.7930` fusion — confirming the *prototype* scoring is stable and deterministic across runs (same content hash → same `0-5 / 32.4-37.4` segments → same score).
+- But both ran through **Railway `/api/analyse`**, the prototype — not the Cloudflare `skept-verify` Worker. The prototype was never the broken layer, so these runs cannot confirm the production fix.
+- **Root reason established this session:** the production Cloudflare verify pipeline is **not yet wired end-to-end** — there's no live path to exercise `skept.co/api/verify` against a clip. So §3.89 runtime verification is *deferred until Cloudflare cutover*, not pending a quick test. The history page confirms this ("0 of 5 checks used this month" — nothing has run through production).
+- Logged as **§3.90** — wire the Cloudflare verify pipeline end-to-end. Framed as a positive milestone: reaching it is both the unblock for §3.89 verification *and* the trigger to begin winding down Railway.
+
+**New finding — §3.91 (non-human content reaches deepfake pillar):**
+
+- The cartoon-cat scored 99.7% on the deepfake pillar despite being a faceless AI cartoon, driving a 79% "suspicious" verdict. The non-human guard only excludes on `frame_count <= 1`, so high-frame synthetic content slips through — and a *human-made* cartoon would score identically, a false-positive surface for legitimate animation.
+- The fresh run's Resemble Intelligence layer makes the gap explicit: `liveness: not_real_person (conf 80)`, `digital_alteration: true (conf 85)`, "entirely synthetic," "no human face." The signal needed to gate this is already returned — just not wired in.
+- Proposed fix: gate the deepfake pillar on liveness (`not_real_person → score=None`) rather than frame count. Same architectural family as §3.20 (Sightengine synthetic-generation gap) — solve together. Logged as §3.91.
+
+**Confirmed closed — §3.76 (logo SVG colour):** verified on live `skept.co/verify` and `/history` — loupe mark renders solid ink (`#1a1a1a`) in nav and footer, plus the history empty-state. The runtime-confirmation gap from the earlier fix is now closed.
+
+**Verdict-band side effect (logged, accepted):** the §3.89 verdict-band correction (3-band → 5-band) means rows already in `analysis_history` were scored under the old bands and are now inconsistent with current logic. Not migrating — prototype/low-volume data. Conscious decision, recorded so it doesn't read as a bug later.
+
+**Decisions logged:** §3.89 runtime-verify deferred to §3.90 (Cloudflare cutover); non-human gap → liveness-gate, paired with §3.20; historical verdict rows accepted as-is; §3.76 closed.
+
+**Open items at session close:** §3.90 (Cloudflare verify wiring — next major workstream), §3.89 (runtime verify, blocked on §3.90), §3.91 (non-human liveness guard, pair w/ §3.20), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only — code + pricing done), §3.78 (PB §11.5 fold-in + Stripe coupon config), §3.45 (no-speech anchor, both layers), §3.79, §3.81, §3.84, §3.85, §3.88.
+**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
+
+---
+
+## 30 Jun 2026 — §3.89 verify Worker scoring reconciled to backend + deployed (runtime verification deferred)
+
+**Session type:** Code — Worker reconciliation and deployment. Single-item session: resolve the divergence found earlier the same day (session 1, after the prototype triage — not a prior day).
+
+---
+
+**§3.89 — CODE RECONCILED + DEPLOYED (30 Jun 2026, commits cd5df37 + e80f38d, Worker version 96b9e66a). NOT yet runtime-verified — see session-3 note below.**
 
 Seven fixes shipped in a single Claude Code pass against `cloudflare/verify-worker.js`, `cloudflare/fusion.js`, and `cloudflare/tier-config.js`. Backend `backend/analysers/` was read-only throughout — source of record.
 
@@ -44,7 +115,7 @@ New: 5 bands matching `backend/analysers/fusion.py:152–186` — `authentic` (<
 
 ---
 
-**Open items at session close:** §3.70 (audio score floor monitoring — no action), §3.76 (verdict Worker logo confirmation pending), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only), §3.78 (Stripe coupon config), §3.79, §3.81, §3.85, §3.88. §3.89 closed.
+**Open items at session close:** §3.70 (audio score floor monitoring — no action), §3.76 (verdict Worker logo confirmation pending), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only), §3.78 (Stripe coupon config), §3.79, §3.81, §3.85, §3.88. §3.89 code deployed but runtime-unverified (see session-3 entry above for why).
 **Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
 
 ---

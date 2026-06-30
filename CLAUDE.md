@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 30 Jun 2026 (session 2)**
+**Last updated: 30 Jun 2026 (session 4)**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -57,7 +57,7 @@ Note: CLAUDE.md previously showed 3 bands (0.30 / 0.60). That was wrong — `fus
 
 ## Resemble AI integration
 
-- Endpoint: `/api/v1/detect`
+- Endpoint: `https://app.resemble.ai/api/v2/detect` (confirmed §3.90, 30 Jun 2026 — `deepfake.py` is the canonical source; Worker was previously using wrong subdomain/path `https://api.resemble.ai/v2/detect`)
 - Single API call per job (`df_sampled.mp4`). No separate audio.wav submission.
 - Audio score embedded in video job response: `item["metrics"]["aggregated_score"]`
 - Audio score formula: `score = max(aggregated_score, 0.0)` — Resemble's negative range means "definitely real"; negatives floor to 0.0. No `(raw+1)/2` conversion applied. Pending live data validation across more clip types (§3.70).
@@ -126,6 +126,9 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.84 | Railway confirmed PERMANENT (30 Jun 2026) — yt-dlp ingestion + R2 upload microservice only, $5/month. NOT being decommissioned. See Deploy section |
 | §3.85 | Magic link email rebrand (CREAM/INK/AMBER tokens) — HTML template not yet built; live email still uses Resend's default dark template |
 | §3.88 | Founder + Admin privilege matrix — role column live in D1, specific privileges (admin quota bypass, founder perks) not yet specced or built |
+| §3.89 | verify Worker scoring reconciled to backend (commit cd5df37). Runtime verification still pending — requires a real end-to-end call through a Pro/Max session. Pipeline structurally unblocked by §3.90. |
+| §3.90 | verify pipeline end-to-end unblocked (commit 2befcd8, 30 Jun 2026): D1 CHECK constraints fixed (migration-analysis-2.sql applied to live DB), Resemble URL corrected, permalink_uuid wired, VERDICT_META updated, share link fixed. Worker redeployed. Runtime verify still needed. |
+| §3.91 | Non-human content reaches deepfake pillar — liveness gate (`not_real_person` → score=None) not yet wired. Pair with §3.20 (Sightengine synthetic gap). |
 
 ---
 
@@ -154,7 +157,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | History page (`history.html`) | LIVE at skept.co/history — cream shell, quota strip, filter chips, card list, delete flow |
 | History Worker | LIVE at skept.co/api/history/* |
 | Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
-| Verify Worker | LIVE at skept.co/api/verify/* — scoring reconciled to backend: audio passthrough, raw video score, certainty scalar, non-human guard, 5-band verdict (§3.89, 30 Jun 2026) |
+| Verify Worker | LIVE at skept.co/api/verify/* — scoring reconciled to backend (§3.89); D1 CHECK constraints fixed, permalink_uuid wired, Resemble URL corrected (§3.90, 30 Jun 2026). Runtime verify still pending (requires live Pro/Max session). |
 | Settings Worker | LIVE at skept.co/api/settings/* |
 | verify.html | LIVE — intake, analysing, and verdict views wired to /api/verify/* |
 | settings.html | Scaffold only — not yet built |
