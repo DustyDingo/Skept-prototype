@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 30 Jun 2026 (session 1)**
+**Last updated: 30 Jun 2026 (session 2)**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -38,10 +38,14 @@ Weighted ensemble over verdict-determining pillars only.
 **Asymmetric exclusion — audio-dubbing pattern:**
 When `deepfake_final < 0.10 AND audio_final > 0.60`, deepfake is excluded from both numerator and denominator. `excluded_reason: audio_dubbing_pattern` written to pillar dict. `contribution: 0.0`. Denominator collapses to 0.35. This must be functional in the fusion calculation — not decorative.
 
-**Verdict bands:**
-- Green (Likely Authentic): 0.0 – 0.30
-- Amber (Inconclusive): 0.30 – 0.60
-- Red (Likely Manipulated): 0.60 – 1.0
+**Verdict bands (5-band — source of record: `backend/analysers/fusion.py`, confirmed §3.89, 30 Jun 2026):**
+- Authentic:    0.00 – <0.20
+- Clean:        0.20 – <0.50   (label: "Ambiguous")
+- Inconclusive: exactly 0.50
+- Suspicious:   0.51 – <0.80
+- Manipulated:  0.80 – 1.00
+
+Note: CLAUDE.md previously showed 3 bands (0.30 / 0.60). That was wrong — `fusion.py` uses the 5-band thresholds above. `cloudflare/fusion.js` reconciled to match (§3.89, commit cd5df37). Do not revert to 3-band values.
 
 **Pillar score semantics:**
 - `score > 0.5` = suspicious (earned)
@@ -105,7 +109,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 ---
 
-## Open checklist items (as of 29 Jun 2026)
+## Open checklist items (as of 30 Jun 2026)
 
 **Current baselines:** Project Brief v0.24 (29 Jun 2026) · Engineers Brief v0.21 (29 Jun 2026)
 
@@ -150,7 +154,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | History page (`history.html`) | LIVE at skept.co/history — cream shell, quota strip, filter chips, card list, delete flow |
 | History Worker | LIVE at skept.co/api/history/* |
 | Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
-| Verify Worker | LIVE at skept.co/api/verify/* |
+| Verify Worker | LIVE at skept.co/api/verify/* — scoring reconciled to backend: audio passthrough, raw video score, certainty scalar, non-human guard, 5-band verdict (§3.89, 30 Jun 2026) |
 | Settings Worker | LIVE at skept.co/api/settings/* |
 | verify.html | LIVE — intake, analysing, and verdict views wired to /api/verify/* |
 | settings.html | Scaffold only — not yet built |
