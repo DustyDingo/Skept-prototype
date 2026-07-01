@@ -6,6 +6,7 @@ Frontend HTML is embedded directly to avoid Docker path issues.
 import asyncio
 import atexit
 import base64
+import hmac
 import logging
 import os
 import uuid
@@ -15,10 +16,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 import aiofiles
+import boto3
+from botocore.config import Config as BotocoreConfig
 import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
 
@@ -52,6 +55,8 @@ else:
     logger.info("[ingest] INSTAGRAM_COOKIES_B64 not set — Instagram ingestion may fail on auth-gated Reels")
 
 print(f"[ingest] cookie path: {INSTAGRAM_COOKIES_PATH}", flush=True)
+
+INGEST_SECRET_VALUE = os.getenv("INGEST_SECRET", "")
 
 jobs: dict[str, dict] = {}
 
@@ -133,6 +138,61 @@ def status(job_id: str):
         "verdict": job["verdict"],
         "error": job["error"],
     }
+
+@app.post("/api/ingest")
+async def ingest_clip_to_r2(request: Request):
+    auth = request.headers.get("Authorization", "")
+    provided = auth.removeprefix("Bearer ").strip()
+    if not INGEST_SECRET_VALUE or not hmac.compare_digest(
+        provided.encode(), INGEST_SECRET_VALUE.encode()
+    ):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    url = body.get("url")
+    if not url:
+        return JSONResponse({"error": "url_required"}, status_code=400)
+
+    job_id = body.get("job_id") or str(uuid.uuid4())
+    workdir = tempfile.mkdtemp(prefix="skept_ingest_")
+    try:
+        try:
+            video_path, _ = await ingest(url, workdir)
+        except Exception as exc:
+            logger.error("[ingest_r2] download failed url=%r: %s", url, exc)
+            return JSONResponse({"error": "download_failed"}, status_code=502)
+
+        ext = Path(video_path).suffix
+        object_key = f"{job_id}{ext}"
+        bucket = os.environ.get("R2_BUCKET_NAME", "skept-clips")
+
+        try:
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+                aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+                config=BotocoreConfig(signature_version="s3v4"),
+                region_name="auto",
+            )
+            await asyncio.to_thread(s3.upload_file, video_path, bucket, object_key)
+        except Exception as exc:
+            logger.error("[ingest_r2] R2 upload failed key=%r: %s", object_key, exc)
+            return JSONResponse({"error": "upload_failed"}, status_code=502)
+
+        try:
+            Path(video_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        return JSONResponse({"key": object_key})
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
 
 async def run_pipeline(job_id: str, url: str | None, workdir: str):
     job = jobs[job_id]
