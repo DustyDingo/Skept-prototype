@@ -2,121 +2,171 @@
 
 ---
 
-## 30 Jun 2026 (session 4) — §3.90 Cloudflare verify pipeline unblocked
+## 02 Jul 2026 (session 8) — §3.94 Stage 1 built and deployed; §3.90 gating milestone CLOSED — Cloudflare verify pipeline confirmed working end-to-end; route pattern bug found and fixed (§3.95)
 
-**Session type:** Code — D1 migration + Worker fix + frontend fix. Identified and closed all confirmed causes of the 500 on every real `skept.co/api/verify` call.
-
----
-
-**Root cause (confirmed via live D1 query):** `analysis_history` had stale CHECK constraints from migration-analysis.sql:
-- `verdict_state IN ('likely_authentic','inconclusive','likely_manipulated')` — but verify-worker writes 'authentic', 'ambiguous', 'suspicious', 'manipulated'
-- `run_depth IN ('6s','12s','18s') DEFAULT '6s'` — but §3.77 locked values are '5s'/'10s'/'15s'
-
-Every INSERT threw a CHECK constraint violation → 500 response after the Resemble API call was already paid for.
-
-**Fixes applied (commit 2befcd8):**
-
-1. **D1 migration (migration-analysis-2.sql):** Recreated `analysis_history` (table confirmed 0 rows — non-destructive) with `verdict_state CHECK ('authentic','ambiguous','suspicious','manipulated')` and `run_depth CHECK ('5s','10s','15s') DEFAULT '5s'`. Applied directly to live skept-analysis DB via D1 MCP. Both indexes preserved.
-
-2. **verify-worker.js — Resemble URL:** `https://api.resemble.ai/v2/detect` → `https://app.resemble.ai/api/v2/detect` (matching `deepfake.py`, the only confirmed-working Resemble caller in the repo).
-
-3. **verify-worker.js — permalink_uuid:** `permalinkUuid = tierConfig.permalink ? crypto.randomUUID() : null` generated before INSERT; written to `permalink_uuid` column; included in JSON response. Pro/Max tier users now get a non-null UUID; `skept.co/v/{uuid}` can resolve a real result for the first time.
-
-4. **verify-worker.js — mapVerdict():** 'suspicious' now passes through as 'suspicious' (was collapsing to 'manipulated'), consistent with 5-band system and new CHECK.
-
-5. **frontend/src/verify.js — VERDICT_META:** Updated from stale 3-band keys (`likely_authentic`/`inconclusive`/`likely_manipulated`) to current 5-band keys (`authentic`/`clean`/`ambiguous`/`suspicious`/`manipulated`). Old keys caused all verdicts to fall through to grey "Unknown" rendering.
-
-6. **frontend/src/verify.js — share link:** Now uses `data.permalink_uuid` (only present for Pro/Max). Was using `data.analysis_id` which verdict-worker never queries by — every share link would have 404d.
-
-**Confirmed still open (cannot close until live test):** §3.89 runtime verification — still requires a real end-to-end call against a Pro/Max session. The pipeline is now structurally unblocked; runtime confirmation is next.
-
-**Investigation findings (FIX 3):**
-- INGEST_WORKER_URL var confirmed correct (Railway §3.84 endpoint).
-- callIngest() `{ key: "..." }` response confirmed: ingestion-worker.js line 100 returns exactly that.
-- Resemble URL mismatch confirmed unambiguous (see fix 2 above). Worker sends URL-based JSON body; deepfake.py sends multipart file upload — different submission method. URL-based submission cannot be confirmed without a live Resemble test.
-- Frontend auth: `submitVerify()` uses `credentials: 'include'` (cookie). `authenticate()` accepts skept_session cookie. Confirmed match.
-
-**Deployed:** `skept-verify` worker redeployed (version f20b9445). Frontend auto-deploys on push to main.
-
-**Open items at session close:** §3.89 (runtime verify — pipeline now unblocked), §3.91 (non-human liveness guard), §3.77 (EB/PB brief fold-ins only), §3.78 (Stripe coupon config), §3.45, §3.79, §3.81, §3.85, §3.88.
-**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
+**Session type:** Claude Code prompt production (Projects) → execution (Claude Code + Railway/Cloudflare dashboards, Charlie direct) → live testing (PowerShell) → MCP verification (Projects). First session to produce a real, verified 200 response from `skept.co/api/verify`.
 
 ---
 
-## 30 Jun 2026 (session 3) — §3.89 verification attempt; Cloudflare cutover identified as the gating milestone
+**Opened against session 7's close note** — §3.94 Stage 1 was locked and ready, nothing built. Live-checked `skept-verify` before touching anything (deploy-divergence habit): confirmed `cc1b337` had never deployed — live `callResemble()` was still the old direct-JSON-URL version, live `callIngest()` still targeted the dead `skept-ingest` URL. R2 confirmed at 0 buckets. No drift from what the checklist already said; safe to proceed on the locked plan.
 
-**Session type:** Verification attempt → root-cause scoping. Picked up the deployed §3.89 fix to confirm it at runtime; established why that isn't yet possible and reframed the blocker as a milestone.
+**Stage 1 build.** Created R2 bucket `skept-clips` via Cloudflare MCP. Generated `INGEST_SECRET`. Claude Code Prompt 1 (new `POST /api/ingest` endpoint on Railway's `Skept-prototype`, reusing existing yt-dlp/cookie logic, boto3 upload to R2, `INGEST_SECRET` bearer auth) — built and committed `fe722e6`, pushed to `main`.
 
----
+**R2 credentials.** Charlie created an Account API Token (`skept-ingest-r2-write`, Object Read & Write scoped to `skept-clips`, TTL Forever, no IP filtering) via the Cloudflare dashboard — navigated there with a navigation-only Chrome Extension prompt; token generation itself stayed manual throughout, never delegated to an agent. Four new Railway env vars set (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `INGEST_SECRET`) via Raw Editor — caught and avoided a near-miss where submitting the editor as first-opened would have wiped the 5 existing variables (`HF_TOKEN`, `INSTAGRAM_COOKIES_B64`, `REPLICATE_API_TOKEN`, `RESEMBLE_API_TOKEN`, `SKEPT_FRAMES`); appended instead.
 
-**Why §3.89 is deployed but not verified:**
+**Prompt 1 test.** First attempts failed on operator error, not code: PowerShell aliases `curl` to `Invoke-WebRequest`, which doesn't accept `-X`/`-H`/`-d` — switched to native `Invoke-RestMethod` for all further testing this session. A retry left the `<a real clip url>` placeholder unsubstituted (`download_failed`, correctly). Corrected retry succeeded: real Instagram reel downloaded via yt-dlp, uploaded to R2 as `test124.mp4`, confirmed via the endpoint's own `{"key": "test124.mp4"}` response. **§3.94 Stage 1 confirmed working.**
 
-- Re-ran the cartoon-cat clip twice through the prototype (job `4b69...` replay, then a genuinely fresh job `d08f...`). Both reproduced the prototype's correct `0.4443` audio passthrough / `0.9970` deepfake / `0.7930` fusion — confirming the *prototype* scoring is stable and deterministic across runs (same content hash → same `0-5 / 32.4-37.4` segments → same score).
-- But both ran through **Railway `/api/analyse`**, the prototype — not the Cloudflare `skept-verify` Worker. The prototype was never the broken layer, so these runs cannot confirm the production fix.
-- **Root reason established this session:** the production Cloudflare verify pipeline is **not yet wired end-to-end** — there's no live path to exercise `skept.co/api/verify` against a clip. So §3.89 runtime verification is *deferred until Cloudflare cutover*, not pending a quick test. The history page confirms this ("0 of 5 checks used this month" — nothing has run through production).
-- Logged as **§3.90** — wire the Cloudflare verify pipeline end-to-end. Framed as a positive milestone: reaching it is both the unblock for §3.89 verification *and* the trigger to begin winding down Railway.
+**Prompt 2 — smaller than scoped.** Verification-first prompt confirmed both `cc1b337` (R2-read → multipart → Resemble) and `66d6b43` (liveness gate: `intelligence: true`, `isNotRealPerson` guard, `non_human_content` exclusion propagation) were already correctly committed — session 6's work, just never deployed. Only actual fix needed: `INGEST_WORKER_URL` pointed at the dead `skept-ingest` URL instead of the real Railway prototype URL. Fixed, deployed `3e40a7d4-1bbd-4b3c-ab66-46fa3eef963b`, committed `171d355`. Independently confirmed via direct Cloudflare MCP inspection of the live Worker bytes (not just Claude Code's report) that both pieces were correctly present post-deploy.
 
-**New finding — §3.91 (non-human content reaches deepfake pillar):**
+**Secrets.** `INGEST_SECRET` and `RESEMBLE_API_KEY` provisioned on `skept-verify` via `wrangler secret put`, run directly in a plain terminal — deliberately kept outside Claude Code's session so neither value ever entered an AI context. Hit and resolved a PowerShell gotcha: first attempt ran from `C:\WINDOWS\System32` (permission error writing `.wrangler\cache` — a protected system folder, unrelated to the secret or the `NODE_OPTIONS` flag); `cd`'d into `cloudflare/` and both put commands succeeded clean.
 
-- The cartoon-cat scored 99.7% on the deepfake pillar despite being a faceless AI cartoon, driving a 79% "suspicious" verdict. The non-human guard only excludes on `frame_count <= 1`, so high-frame synthetic content slips through — and a *human-made* cartoon would score identically, a false-positive surface for legitimate animation.
-- The fresh run's Resemble Intelligence layer makes the gap explicit: `liveness: not_real_person (conf 80)`, `digital_alteration: true (conf 85)`, "entirely synthetic," "no human face." The signal needed to gate this is already returned — just not wired in.
-- Proposed fix: gate the deepfake pillar on liveness (`not_real_person → score=None`) rather than frame count. Same architectural family as §3.20 (Sightengine synthetic-generation gap) — solve together. Logged as §3.91.
+**§3.95 — NEW — route pattern bug found and fixed.** First real `/api/verify` call returned a bare `405 Method Not Allowed` — no JSON body, meaning the request never reached the Worker's own `fetch()` handler (which always returns JSON). Root cause: `wrangler-verify.toml`'s route was `pattern = "skept.co/api/verify/*"` (trailing wildcard), which did not match the literal path `/api/verify` cleanly against the Worker's own internal check (`url.pathname !== "/api/verify"`, no wildcard tolerance) — the request fell through to Cloudflare's static-asset handling for skept.co, which only accepts GET/HEAD on unmatched paths. This is a real product bug, not a test artefact — the frontend's own `/api/verify` fetch call would have hit the identical wall on every real user submission since the route was first deployed. Fixed: pattern changed to `"skept.co/api/verify"` (wildcard removed entirely — the Worker never needs a suffix). Deployed `61046432-333c-4be8-8d4f-b3c33ad7230d`, committed `f7e6ac8`.
 
-**Confirmed closed — §3.76 (logo SVG colour):** verified on live `skept.co/verify` and `/history` — loupe mark renders solid ink (`#1a1a1a`) in nav and footer, plus the history empty-state. The runtime-confirmation gap from the earlier fix is now closed.
+**First successful live run.** Retest after the route fix returned `{"error":"missing_token"}` — progress (reached the Worker), traced to the `Bearer ` prefix being stripped along with the placeholder during substitution, not a code issue. Corrected retry succeeded:
 
-**Verdict-band side effect (logged, accepted):** the §3.89 verdict-band correction (3-band → 5-band) means rows already in `analysis_history` were scored under the old bands and are now inconsistent with current logic. Not migrating — prototype/low-volume data. Conscious decision, recorded so it doesn't read as a bug later.
+```
+job_id:        19a5f448-8ad6-467d-b4db-f82d968e7602
+verdict:       suspicious
+score:         0.511
+tier_at_run:   free
+analysis_id:   3cf88ea9-54e3-4e9d-9234-5d1d0a3281b0
+platform:      instagram
+```
 
-**Decisions logged:** §3.89 runtime-verify deferred to §3.90 (Cloudflare cutover); non-human gap → liveness-gate, paired with §3.20; historical verdict rows accepted as-is; §3.76 closed.
+Independently confirmed via direct `d1_database_query` against `skept-analysis` (not just trusting the API response) — row present with `verdict_state: suspicious`, `run_depth: 5s`, both valid against the CHECK constraints §3.90 fixed, `permalink_uuid: null` (correct — Free tier).
 
-**Open items at session close:** §3.90 (Cloudflare verify wiring — next major workstream), §3.89 (runtime verify, blocked on §3.90), §3.91 (non-human liveness guard, pair w/ §3.20), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only — code + pricing done), §3.78 (PB §11.5 fold-in + Stripe coupon config), §3.45 (no-speech anchor, both layers), §3.79, §3.81, §3.84, §3.85, §3.88.
-**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
+**§3.90 — the gating milestone, open since session 3 — is CLOSED.** First clip ever processed end-to-end through the Cloudflare-native pipeline. §3.89's runtime verification is complete for the standard scoring path (audio passthrough, certainty scalar, 5s segments, tier quotas all exercised correctly on a real Resemble response). §3.92 and §3.93 close alongside it.
 
----
-
-## 30 Jun 2026 — §3.89 verify Worker scoring reconciled to backend + deployed (runtime verification deferred)
-
-**Session type:** Code — Worker reconciliation and deployment. Single-item session: resolve the divergence found earlier the same day (session 1, after the prototype triage — not a prior day).
+**§3.91 — not fully closed.** Code is deployed and confirmed live, and did not misfire on this run (real face, normal frame count, nothing excluded — correct behaviour, but the exclusion branch itself went unexercised). The reference cartoon-cat clip re-run — needed to confirm the guard actually fires — remains outstanding. Left open, downgraded from blocked to actionable.
 
 ---
 
-**§3.89 — CODE RECONCILED + DEPLOYED (30 Jun 2026, commits cd5df37 + e80f38d, Worker version 96b9e66a). NOT yet runtime-verified — see session-3 note below.**
+**Decisions logged:** None new architecturally — pure execution against the plan session 6 locked. Two technique notes worth carrying forward: PowerShell aliases `curl` to `Invoke-WebRequest`; use `Invoke-RestMethod` natively instead of fighting `curl.exe` quoting on Windows. `wrangler secret put` values should always be entered in a raw terminal, never routed through Claude Code's own session, regardless of how the command itself was produced.
 
-Seven fixes shipped in a single Claude Code pass against `cloudflare/verify-worker.js`, `cloudflare/fusion.js`, and `cloudflare/tier-config.js`. Backend `backend/analysers/` was read-only throughout — source of record.
-
-**Fix 1 — Audio score formula (verify-worker.js):**
-Old: `rawToSuspicion(audioScoreRaw)` → `(raw + 1.0) / 2.0`. Wrong — this was the transform that was removed from the prototype during §3.71.
-New: `Math.max(0.0, audioScoreRaw)` passthrough, matching `audio.py:56`. -1.0 no-speech sentinel preserved (→ null, excluded from fusion).
-
-**Fix 2 — Video base score (verify-worker.js):**
-Old: `rawToSuspicion(videoScoreRaw)` — same wrong transform on the primary deepfake pillar; flipped low/authentic scores to suspicious.
-New: `videoScoreRaw` used directly as the base score before certainty weighting, matching `deepfake.py:257`.
-
-**Fix 3 — Certainty scalar (verify-worker.js):**
-Old: not present.
-New: `SKEPT_FRAMES = 6`; frame count extracted from `video_metrics.children[0].children[*].children` (filtering on `score != null && certainty != null`); `certainty = min(SKEPT_FRAMES, resembleFrameCount) / SKEPT_FRAMES`; applied as `videoScoreRaw * certainty`. Matches `deepfake.py:221–223, 258`.
-
-**Fix 4 — Non-human content guard (verify-worker.js):**
-Old: not present.
-New: `if (resembleFrameCount <= 1) videoSuspicion = null` — deepfake pillar excluded from fusion (score null). Handles both the non-human guard (`deepfake.py:226`) and the low-coverage guard (empty children path) in one check, since both collapse to resembleFrameCount = 0 or 1.
-
-**Fix 5 — rawToSuspicion cleanup (verify-worker.js):**
-After fixes 1 and 2, both references to `rawToSuspicion` were gone. Removed `rawToSuspicion` and its dependency `clamp` entirely.
-
-**Fix 6 — Tier quotas + Lite tier (tier-config.js):**
-Pro 50 → 40, Max 100 → 60. Added missing `lite` tier: quota=10, `depthSegments: ['head']`, all feature flags matching Free (entry paid tier — no permalink/seals/evidenceJson, no viewedHistory). Matches `free=5, lite=10, plus=20, pro=40, max=60` quota table.
-
-**Fix 7 — Verdict bands (fusion.js):**
-Old: 3 bands — `likely_authentic` (<0.40) / `inconclusive` (0.40–0.70) / `likely_manipulated` (≥0.70). Thresholds AND band count both wrong.
-New: 5 bands matching `backend/analysers/fusion.py:152–186` — `authentic` (<0.20) / `clean` (<0.50) / `ambiguous` (==0.50) / `suspicious` (<0.80) / `manipulated` (≥0.80). Score rounded to 3 decimal places (`Math.round(...* 1000) / 1000`) to match backend `round(..., 3)`. `mapVerdict` in verify-worker.js updated to map 5 bands to 3 D1 `verdict_state` values: authentic/clean → `'authentic'`, ambiguous → `'ambiguous'`, suspicious/manipulated → `'manipulated'`.
-
-**CLAUDE.md finding:** The Verdict bands section had been showing 3-band thresholds (0.30/0.60) since initial doc creation. The backend has never used these values — `fusion.py` has always had 5 bands at 0.20/0.50/0.80. Corrected in the CLAUDE.md closure commit with a note to not revert.
-
-**Deployed:** `cd cloudflare && npx wrangler@latest deploy --config wrangler-verify.toml` → version `96b9e66a`, route `skept.co/api/verify/*`.
+**Open items at session close:** §3.95 (NEW — route pattern bug — closed same session), §3.91 (code deployed, exclusion path unexercised — cartoon-cat re-test recommended), §3.76, §3.78 (Stripe-side confirmation only), §3.79, §3.81, §3.82, §3.83, §3.85, §3.88 (unchanged, carried forward). §3.84 (Railway wind-down) — status upgraded from *deferred pending Stage 1* to *actionable now*: Cloudflare verify has reached functional parity for the first time. §3.89, §3.90, §3.92, §3.93, §3.94 — CLOSED this session, dropped from the open list.
+**Baseline:** Project Brief v0.25 · Engineers Brief v0.22 · Legal Brief v0.10 · Pricing Summary v2.3 (unchanged — no document builds this session)
 
 ---
 
-**Open items at session close:** §3.70 (audio score floor monitoring — no action), §3.76 (verdict Worker logo confirmation pending), §3.77 (brief fold-ins EB §4.10 / PB §11.5 only), §3.78 (Stripe coupon config), §3.79, §3.81, §3.85, §3.88. §3.89 code deployed but runtime-unverified (see session-3 entry above for why).
-**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Pricing Summary v2.3
+## 30 Jun 2026 (session 7) — Project Brief v0.25 and Engineers Brief v0.22 built: §3.77/§3.78/§3.86/§3.87 folded in; §3.70 found already-folded
+
+**Session type:** Document build (Projects). Two brief version bumps executed back-to-back — no code, no Claude Code handoff this session.
+
+---
+
+**Scope.** Cleared the closed-but-unfolded backlog flagged at session close: §3.77 (segment duration 4s→5s), §3.78 (founder cohort coupon), §3.86 (seal/permalink gate Plus→Pro) into Project Brief v0.25; §3.77, §3.86, §3.87 (role column) into Engineers Brief v0.22.
+
+**Build method — worth recording for next time a brief gets rebuilt.** The project-mounted `.docx` files (`project_brief_v0_24.docx`, `engineers_brief_v0_21.docx`) are not raw binary — reading them via `bash`/`cat` returns a clean markdown-style text extraction, not a zip archive (`extract-text` and `unzip` both fail against them; `file` reports plain UTF-8 text). No markdown source file for either brief exists in the project to edit directly. Worked around it: extracted the full body text via `view`/`sed`, edited the relevant sections directly in markdown, ran it through `pandoc` to a fresh `.docx`, then wrote a small standalone script (`assemble_briefs.py`) that imports `build_cover()`, `build_toc_table()`, `HEADING_STYLES`, and the section-break helper directly from `skept_brief_template.py` and assembles cover + TOC (PB only) + pandoc body manually — rather than going through `rebuild()`'s strip-first-7-elements heuristic, which assumes a specific raw-pandoc leading-boilerplate shape that doesn't exist when the source is reconstructed extracted text rather than the original markdown. Same design tokens, same cover/TOC code, different assembly path. Verified by converting both outputs to PDF and rendering the cover, TOC, edited table pages, and Document History pages as images — confirmed correct before delivery.
+
+**§3.70 finding.** Checklist carried this as "fold into EB §3.3 at next brief build; no active action." Direct inspection of the EB v0.21 source found the calibration note already present verbatim — it was evidently folded in during the v0.21 build itself, and the checklist row was never updated to reflect that. No action was actually needed this session; checklist row corrected to record the finding rather than re-doing already-done work. Same shape as the project's established deploy-divergence principle, just applied to documents instead of Worker bytes — live content beat the tracking note.
+
+**Project Brief v0.25 — §11.5 Pricing:** monthly pricing table, analysis depth explained paragraph, and unit economics table all moved 4s→5s; Plus and Pro feature descriptions swapped to match the §3.86 gate move (Plus loses seal/permalink, Pro gains it); unit economics and top-up pack margins recalculated for the 5s cost basis (Plus/Pro ~26.7% web, Max ~17.5% web at full cap, down from ~41.3%/34.0%); margin commentary rewritten to match the pricing summary's explicit "40% floor superseded as a planning assumption" framing rather than the old "accepted, real-world will be better" hedge; new **Founder cohort coupon** paragraph added; pricing summary cross-reference bumped v2.2→v2.3 (was already stale — pricing summary itself has been at v2.3 since the §3.77 margin rebuild). **§16.4 Paid-tier gating:** Plus/Pro rows swapped to match. Cross-reference sweep: three body references to `engineers_brief_v0_21.docx` bumped to `v0_22`.
+
+**Engineers Brief v0.22 — §4.10 Subscription and tier enforcement:** new **Role field** bullet documents the §3.87 schema addition (`role` column, `user`/`founder`/`admin`, migration `0003_add_role_to_users.sql`) — scoped deliberately to the structural fact only, not privilege specifics, since §3.88 (founder/admin privilege matrix) is still open and explicitly sequences brief updates after that decision closes. Analysis depth by tier and the Phase 2 delivery bullet's seal-gate tier list both moved to 5s/10s/15s and Pro/Max respectively. Cross-reference sweep: `project-brief-v0.22`/`v0.23` (the cover "Related" field was already stale, pointing at v0.23 while PB was actually at v0.24) bumped to `v0.25` throughout.
+
+**§3.78 partial close.** Only the PB documentation action is done. The other two §3.78 actions — Stripe dashboard coupon-config confirmation and checkout-link price-ID targeting — are operational, not documentation, and remain open. Checklist entry retitled and the one completed box checked; the other two left unchecked.
+
+---
+
+**Decisions logged:** none new — execution session against already-locked decisions. The build-method workaround above (assemble via imported `skept_brief_template.py` functions rather than `rebuild()`) is a technique decision worth carrying forward, not a project decision.
+
+**Open items at session close:** §3.90 (verify pipeline wiring, gating milestone, unchanged), §3.91 (liveness gate, blocked on §3.90), §3.92 (secrets), §3.93 (R2 bucket creation), §3.94 (Stage 1 build, ready, not started), §3.89 (scoring reconciled, runtime-unverified), §3.76 (verdict Worker visual confirmation outstanding), §3.78 (Stripe-side confirmation only — doc piece closed this session), §3.79, §3.81, §3.82, §3.83, §3.84, §3.85, §3.88 (unchanged, carried from session 6). §3.77, §3.86, §3.87 closed in full this session — dropped from the open list.
+**Baseline:** Project Brief v0.25 · Engineers Brief v0.22 · Legal Brief v0.10 · Pricing Summary v2.3
+
+---
+
+## 30 Jun 2026 (session 6) — §3.90 architecture gap discovered: assumed ingest service never existed; Railway/Cloudflare split redesigned; build deferred to fresh session
+
+**Session type:** Claude Code prompt production (Projects) → execution (Claude Code) → Chrome Extension investigation → architecture redesign. `cc1b337` committed but not deployed. No further code shipped this session — scope grew large enough mid-session that it was called to document and plan properly rather than rush a build.
+
+---
+
+**§3.90 fix attempt — `cc1b337` committed, redeploy blocked.** Claude Code prompt produced for the multipart-vs-presigned decision deferred at session 5 close — chose multipart, matching `deepfake.py`. `callResemble()` rewritten to `callResemble(apiKey, bucket, r2Key)`: read R2 object → multipart FormData → POST to Resemble. `[[r2_buckets]] CLIP_BUCKET` binding added to `wrangler-verify.toml`, bucket name placeholder `skept-clips`. Committed `cc1b337`, pushed to `main`. Deploy failed: R2 management API returned `code: 10042` ("Please enable R2 through the Cloudflare Dashboard") — R2 had never been enabled on the account at all. Bucket name also unconfirmed.
+
+**Chrome Extension investigation (read-only, scoped to avoid clicking Enable/Purchase) surfaced a deeper problem than a missing toggle.** Findings:
+- R2 confirmed not enabled, account ID `787ca3a5426422e0df65ba7ef999d196` matched expectation. Enable flow: single button, $0 due now, charges existing PayPal (`charlie.doust@hotmail.com`) only past free tier (10GB/1M Class-A/10M Class-B per month).
+- R2 manually enabled mid-session via dashboard. R2 Overview confirms: zero buckets created.
+- Railway has no `skept-ingest` service anywhere. Checked both `wholesome-truth` (Skept-prototype only) and `intuitive-fulfillment` (Skept-Provider-Eval, Skept-prototype) projects, all services, exhaustively. `R2_BUCKET_NAME` and `R2_ENDPOINT` — referenced in session 4/5 notes as living on Railway — do not exist on any Railway service or shared variables.
+- The only working pipeline is Railway `wholesome-truth → Skept-prototype`: downloads clips directly via yt-dlp (Instagram cookie auth, `INSTAGRAM_COOKIES_B64`), calls Resemble (`RESEMBLE_API_TOKEN`) and Replicate (`REPLICATE_API_TOKEN`) directly. No R2 involvement anywhere in this path.
+
+**Conclusion: the `skept-ingest`/R2-population architecture documented in session 4 (`INGEST_WORKER_URL`, `ingestion-worker.js` returning `{ key }`) was written/committed but never actually deployed as a running service.** Same failure mode as the established Worker deploy-divergence pattern (repo code ≠ live bytes) — turns out it applies to whole missing services, not just stale deploys. This invalidates §3.90's original "presigned vs multipart" framing entirely: both candidates assumed something populates R2, and nothing ever has. Full detail logged to checklist as §3.94.
+
+**Architecture redesign, two false starts before landing:**
+1. **Path A** (build the missing R2/ingest service from scratch) vs **Path B** (collapse — Cloudflare Worker calls the Railway prototype directly as one JSON-in/JSON-out hop, abandon R2 in the critical path entirely) — considered. B chosen for speed: reuses the only proven pipeline, no new infra. Claude Code prompt drafted for B (delete `callIngest()`/R2-based `callResemble()`, add `callPrototype(url)`, strip the R2 binding). **Not executed — superseded one message later, do not run.**
+2. Redirected: Cloudflare should talk to Resemble directly as the primary route, Railway reduced toward eventual elimination ("wind up Railway" — testing/dev framing, not production-permanent). Triggered a check on whether full Cloudflare-native (including the download step) is now possible.
+3. **Finding: standard Workers (V8 isolate) still can't run yt-dlp/ffmpeg/subprocess** — unchanged, this is why Railway exists as the ingestion microservice in the first place (§3.84, locked 29 Jun). **New finding: Cloudflare Containers is a current product** (changelog Mar 2026) — full Docker images deployed via `wrangler`, with R2/binding access, wired to a Durable Object. Means true full Railway elimination is technically possible now, but it's a new build (Docker image w/ yt-dlp + ffmpeg + cookie handling, Durable Object wiring, paid instance tier — not free Workers tier), not a swap. Logged as a horizon item under §3.84 — not started, not scoped for next session either; deliberately deferred until the basic pipeline has one confirmed live run.
+
+**Landed direction — Stage 1 (planned, not built):** Railway's `Skept-prototype` service gets a new ingest-only endpoint — download via existing yt-dlp/cookie logic, upload to R2, return confirmation. No Resemble/Replicate calls in this new endpoint. Cloudflare Worker keeps/restores `cc1b337`'s R2-read → multipart → Resemble logic largely as committed — that code was correct, it just had nothing to read. `RESEMBLE_API_KEY` moves to Cloudflare as a new secret, value sourced from Railway's existing `RESEMBLE_API_TOKEN` (name differs, same value — flagged so it isn't mis-set). `INSTAGRAM_COOKIES_B64` stays on Railway. Replicate/faceswap calling location explicitly untouched — out of scope this round, only Resemble's call site moves. This is, in effect, the actual implementation of §3.84's already-locked "strip Railway to yt-dlp ingestion only" action item — not a new decision, just arrived at by a different route than expected.
+
+**Session closed without building Stage 1.** Scope grew large enough mid-session ("this is going to be a big session") to warrant full planning + documentation now, build executed in a fresh session with everything already decided going in — no improvising mid-build. Checklist updated (§3.90 rewritten, §3.92/§3.93 updated, new §3.94 added, §3.84 annotated) ahead of that next session.
+
+**Decisions logged:** Multipart over presigned for the Resemble call (carried into Stage 1). Path B (Worker→Railway-prototype-direct) considered and abandoned. Stage 1 split (Railway = ingest-only, Cloudflare = Resemble-direct) adopted as the build target. Cloudflare Containers flagged as the real "wind up Railway" path — deliberately deferred, not started.
+
+**Open items at session close:** §3.94 (NEW — architecture gap + Stage 1 plan, ready to build), §3.90 (blocked on §3.94's build, root cause reframed), §3.92 (secrets — `RESEMBLE_API_KEY` now sourced from Railway's `RESEMBLE_API_TOKEN`, `INGEST_SECRET` now protects the new Railway ingest-only endpoint), §3.93 (binding present via `cc1b337`, R2 enabled, bucket still not created), §3.91 (unchanged, still blocked on §3.90 chain — guard logic must survive the Stage 1 Worker rewrite), §3.89 (unchanged), §3.84 (annotated — Containers horizon note added), §3.76, §3.77/§3.78 (brief fold-ins, unchanged), §3.79, §3.81, §3.82, §3.83, §3.85, §3.88 (unchanged, carried from session 5).
+**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Legal Brief v0.10 · Pricing Summary v2.3
+
+---
+
+## 30 Jun 2026 (session 5) — Claude Code repo audit surfaces three pre-flight blockers on the verify path
+
+**Session type:** Prototype/production diagnosis (Projects) — reviewing a Claude Code repo-audit output surfaced via the terminal. No code changes this session; findings logged to checklist.
+
+---
+
+The audit was triggered to confirm the §3.90 verify-pipeline state ahead of a first live run. §3.91 code (`intelligence: true`, `isNotRealPerson` guard, `non_human_content` exclusion) confirmed fully present in repo source; commit `66d6b43` confirmed an ancestor of HEAD on `main`, so it's live, not stuck behind a stale deploy. Post-deploy commits touch docs only — Worker code is in sync with HEAD. That part is clean.
+
+Three new blockers surfaced, all on the live verify path:
+
+- **§3.92 — Worker secrets unprovisioned (hard floor).** `wrangler secret list` against `skept-verify` returns `[]`. Both `RESEMBLE_API_KEY` and `INGEST_SECRET` are missing. First live call fails at `callIngest()` (401 from Railway) and `callResemble()` (auth error) regardless of any other fix. Nothing downstream can be runtime-tested until both are set.
+- **§3.93 — R2 binding + bucket name absent from repo.** No `[[r2_buckets]]` in `wrangler-verify.toml`. Bucket name lives in a Railway env var (`R2_BUCKET_NAME`), not visible in the Cloudflare repo. R2 S3 creds also unprovisioned as Worker secrets (Railway only). Account ID known via OAuth (`787ca3a5426422e0df65ba7ef999d196`) but not in toml.
+- **§3.90 root cause confirmed.** This is the sharper finding. `callResemble()` is called with `clipUrl` — the original social URL — never the R2 key the ingest service already stored. Resemble gets `{ url: <tiktok.com/...>, content_type: 'video', intelligence: true }`. Independent of the existing JSON-vs-multipart question, a gated social URL is very likely to fail at Resemble outright. Two candidate fixes: (a) presigned R2 URL from the stored key — blocked on §3.93; (b) direct multipart upload to Resemble like `deepfake.py` — no R2 dependency, more self-contained while §3.93 is open. Decision deferred to the fix thread.
+
+**Dependency shape:** §3.92 is the floor under everything (§3.89 runtime verification, §3.90, §3.91 liveness path). §3.93 only gates the presigned-URL fix option for §3.90 — the multipart option routes around it. Fix work to be picked up in a fresh thread.
+
+**Decisions logged:** none — diagnosis only. Fix-approach decision (presigned vs multipart) explicitly deferred.
+
+**Open items at session close:** §3.92 (Worker secrets — NEW, hard blocker), §3.93 (R2 binding/bucket name — NEW), §3.90 (verify wiring — root cause now identified, blocked on §3.92), §3.91 (liveness field path — blocked on §3.92), §3.89 (scoring reconciled, runtime-unverified — confirm against `verify-worker.js` if in doubt), §3.76 (verdict Worker visual confirmation), §3.77/§3.78 (brief fold-ins), §3.79, §3.81, §3.84, §3.85, §3.88.
+**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Legal Brief v0.10 · Pricing Summary v2.3
+
+---
+
+## 30 Jun 2026 (session 4) — §3.90/§3.91 code complete via Claude Code; both runtime-blocked on Cloudflare cutover
+
+**Session type:** Claude Code prompt production (Projects) → execution (Claude Code) → output review. Two prompts run back-to-back. Both code-complete and committed; neither runtime-verified.
+
+---
+
+**§3.90 — Verify pipeline unblocked (code complete; deployed `skept-verify` version `f20b9445`):**
+
+Two D1 CHECK constraint mismatches were silently 500-ing every real `/api/verify` call at the INSERT step — after the Resemble call had already been paid for.
+
+- **FIX 1 — D1 migration (`cloudflare/migration-analysis-2.sql`, commit `2befcd8`):** recreated `analysis_history` with corrected CHECK constraints. `verdict_state` was `('likely_authentic','inconclusive','likely_manipulated')` → now `('authentic','ambiguous','suspicious','manipulated')`. `run_depth` was `('6s','12s','18s') DEFAULT '6s'` → now `('5s','10s','15s') DEFAULT '5s'`. Applied directly to live skept-analysis D1 — confirmed 0 rows (non-destructive); both indexes preserved.
+- **FIX 2 — permalink_uuid (`verify-worker.js`):** `const permalinkUuid = tierConfig.permalink ? crypto.randomUUID() : null;` added before the INSERT, written to the `permalink_uuid` column, included in the JSON response. Pro/Max users now get a non-null UUID that `verdict-worker.js` can actually resolve.
+- **FIX 3 — investigation results:**
+  - (a) `INGEST_WORKER_URL` = `https://skept-ingest.up.railway.app` in `[vars]`, not a secret. Correct.
+  - (b) `callIngest()` response shape — `ingestion-worker.js` returns `{ key: r2Key }`. Confirmed match.
+  - (c) **Resemble URL — bug confirmed and fixed.** Worker used `https://api.resemble.ai/v2/detect`; `deepfake.py` (only confirmed-working caller) uses `https://app.resemble.ai/api/v2/detect`. Host corrected. **Caveat — the sharper risk:** `deepfake.py` submits via **multipart file upload**; the Worker submits a **URL-based JSON body**. Whether `/api/v2/detect` accepts URL-based requests at all is unconfirmed and cannot be confirmed without a live test. This — not the host — is the real open question under the §3.90 runtime test.
+  - (d) Frontend auth — `submitVerify()` sends `credentials: 'include'` (cookie); `authenticate()` accepts the `skept_session` cookie. Confirmed match.
+  - **Bonus unambiguous fixes:** `VERDICT_META` in `frontend/src/verify.js` was on stale 3-band keys → all verdicts were falling through to grey "Unknown"; updated to current 5-band keys. Share link was building off `data.analysis_id` → updated to `data.permalink_uuid` (verdict-worker queries by `permalink_uuid`; analysis_id links always 404'd).
+
+**§3.91 — Non-human / synthetic content gate (code complete; commit `66d6b43`):**
+
+- `verify-worker.js`: `callResemble()` now sends `intelligence: true` (required for Resemble to return the Intelligence/liveness layer). After `c2paResult`, extracts `item?.intelligence`, logs it once via `console.log` (one-shot diagnostic — read off `wrangler tail` on next live run), derives `livenessLabel` from either flat-string or `{ label }` object form.
+- Non-human guard is now `resembleFrameCount <= 1 || isNotRealPerson` — frame-count branch unchanged in behaviour, just gains the reason label; both branches set `deepfakeExcludedReason = 'non_human_content'` and `videoSuspicion = null`.
+- `fusion.js`: null-score pillar loop now propagates any `excluded_reason` on the input pillar (e.g. `non_human_content`) into `detail[name].excluded_reason` and `exclusionReasons`. `audio_dubbing_pattern` logic untouched.
+- **Liveness field path is best-effort, NOT confirmed** — no live Resemble Intelligence response has been observed from the Worker. `// TODO: confirm exact field path against a live wrangler tail run` left at the gate.
+
+---
+
+**Both items are code-complete but runtime-unverified, and blocked on the same milestone: the Cloudflare verify cutover (§3.90 end-to-end wiring / first real `/api/verify` call).** Two specific confirmations must come off the *first* live run — both surface on the same `wrangler tail`, so it's one test session, not two:
+
+1. **(§3.90)** Does Resemble's `/api/v2/detect` accept a URL-based JSON body, or must the Worker switch to multipart upload like `deepfake.py`? Sharpest risk in the verify path.
+2. **(§3.91)** What is the actual `item.intelligence` field structure? Confirm the liveness path, remove the TODO.
+
+**Deployments this session:** `skept-verify` `f20b9445`. Commits: `2befcd8` (D1 migration), `8ef0cd3` (§3.90 worker + frontend), `66d6b43` (§3.91).
+
+**Open items at session close:** §3.76 (verdict Worker logo runtime confirmation), §3.78 (PB §11.5 fold-in + Stripe coupon config), §3.79, §3.81, §3.84, §3.85, §3.88, §3.90 (runtime verification — now the gating milestone; carries the multipart-vs-URL confirmation), §3.91 (runtime verification — liveness field path confirmation, bundled into the §3.90 test run). §3.77 brief fold-ins (EB §4.10 / PB §11.5) still pending next builds.
+**Baseline:** Project Brief v0.24 · Engineers Brief v0.21 · Legal Brief v0.10 · Pricing Summary v2.3
 
 ---
 
