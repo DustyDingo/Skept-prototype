@@ -23,7 +23,7 @@ binding = "CLIP_BUCKET"
 bucket_name = "skept-clips"
 
 [vars]
-INGEST_WORKER_URL = "https://skept-ingest.up.railway.app"
+INGEST_WORKER_URL = "https://skept-prototype-production.up.railway.app"
 
 [[routes]]
 pattern = "skept.co/api/verify/*"
