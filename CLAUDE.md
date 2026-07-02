@@ -1,5 +1,5 @@
 # Skept Prototype — Developer Reference
-**Last updated: 30 Jun 2026 (session 6)**
+**Last updated: 02 Jul 2026 (session 8)**
 
 Skept is an AI-content detection and video verification platform for short-form social media. This file is the canonical session-start reference for Claude Code. Load it at the start of every session.
 
@@ -13,7 +13,7 @@ Local path: C:\Users\charl\OneDrive\Documents\App Development\Skept\Deployment-S
 
 ## Architecture overview
 
-Production stack is Cloudflare-native — Pages (frontend), Workers (API/routing), D1 (user records, analysis history), R2 (clip storage), KV (sessions, auth tokens). Railway (`skept-prototype-production.up.railway.app`) is confirmed permanent (§3.84); its target role is a thin yt-dlp-ingestion + R2-upload utility behind Cloudflare, but **this split has NOT yet been built as of session 6** — the service currently still runs full analysis (yt-dlp + Resemble + Replicate) directly. See §3.94 for the Stage 1 build plan.
+Production stack is Cloudflare-native — Pages (frontend), Workers (API/routing), D1 (user records, analysis history), R2 (clip storage), KV (sessions, auth tokens). Railway (`skept-prototype-production.up.railway.app`) is confirmed permanent (§3.84). **The ingest/analysis split is now built and confirmed working end-to-end (§3.94, session 8, 02 Jul 2026).** Railway now exposes a dedicated `POST /api/ingest` endpoint (download via existing yt-dlp/cookie logic, upload to R2, no Resemble/Replicate calls) alongside its pre-existing full-analysis routes, which remain untouched. The Cloudflare Worker (`skept-verify`) reads the resulting R2 object and submits it to Resemble via multipart upload. First real clip processed end-to-end 02 Jul 2026 — see §3.90.
 
 **Analysers:**
 - `analysers/deepfake.py` — Resemble AI DETECT-3B Omni (video). Single API call to `/api/v1/detect`. Submits `df_sampled.mp4`. Returns per-frame scores via `video_metrics.children`. Certainty-weighted mean scoring. Also reads embedded audio score from same response (`item["metrics"]["aggregated_score"]`), stored as `video_job_audio_score`.
@@ -39,7 +39,7 @@ Weighted ensemble over verdict-determining pillars only.
 When `deepfake_final < 0.10 AND audio_final > 0.60`, deepfake is excluded from both numerator and denominator. `excluded_reason: audio_dubbing_pattern` written to pillar dict. `contribution: 0.0`. Denominator collapses to 0.35. This must be functional in the fusion calculation — not decorative.
 
 **Asymmetric exclusion — non-human content (§3.91, commit 66d6b43, 30 Jun 2026):**
-When Resemble's Intelligence liveness signal indicates `not_real_person`, the deepfake pillar is excluded from both numerator and denominator: `videoSuspicion = null`, `deepfakeExcludedReason = 'non_human_content'`. Parallel in structure to `audio_dubbing_pattern`. `fusion.js` propagates this reason into the pillar detail (`detail.deepfake.excluded_reason`) and pushes it to `exclusionReasons` via the null-score pillar loop (lines 40–49 of `fusion.js`). The low-frame-count guard (`resembleFrameCount <= 1`) is retained alongside the liveness check — both branches now set `deepfakeExcludedReason = 'non_human_content'`. **Liveness field path is best-effort/unconfirmed** — no live Intelligence response has been observed yet; a one-shot `console.log('[verify-worker] resemble intelligence layer:', JSON.stringify(intelligence))` is in place to read off `wrangler tail` on the first live run. A TODO comment marks the gate pending field-path confirmation. Runtime confirmation of the `item.intelligence` structure folds into the §3.90 first-live-run `wrangler tail`.
+When Resemble's Intelligence liveness signal indicates `not_real_person`, the deepfake pillar is excluded from both numerator and denominator: `videoSuspicion = null`, `deepfakeExcludedReason = 'non_human_content'`. Parallel in structure to `audio_dubbing_pattern`. `fusion.js` propagates this reason into the pillar detail (`detail.deepfake.excluded_reason`) and pushes it to `exclusionReasons` via the null-score pillar loop (lines 40–49 of `fusion.js`). The low-frame-count guard (`resembleFrameCount <= 1`) is retained alongside the liveness check — both branches now set `deepfakeExcludedReason = 'non_human_content'`. **Guard confirmed live, exclusion branch still unconfirmed (session 8, 02 Jul 2026).** The first real `/api/verify` call went through this code path without misfiring — a normal clip with a real, identifiable face correctly went unexcluded. That confirms the guard doesn't false-positive, but the `isNotRealPerson` branch itself has still never actually fired — the test clip had nothing for it to catch. The liveness field path (`item.intelligence`) remains unconfirmed in the sense that matters: no one has yet observed what a genuinely non-human/synthetic clip's Intelligence response looks like off `wrangler tail`. The TODO and one-shot `console.log` should stay in place until a cartoon-cat-style clip is specifically re-run.
 
 **Verdict bands (5-band — source of record: `backend/analysers/fusion.py`, confirmed §3.89, 30 Jun 2026):**
 - Authentic:    0.00 – <0.20
@@ -62,7 +62,7 @@ Note: CLAUDE.md previously showed 3 bands (0.30 / 0.60). That was wrong — `fus
 
 - Endpoint: `https://app.resemble.ai/api/v2/detect` (confirmed §3.90, 30 Jun 2026 — `deepfake.py` is the canonical source; Worker was previously using wrong subdomain/path `https://api.resemble.ai/v2/detect`)
   - **Submission method resolved (commit `cc1b337`, session 6):** `callResemble()` has been rewritten to read the clip from R2 (`bucket.get(r2Key)`) and multipart-upload it directly to Resemble, matching `deepfake.py` exactly. The old URL-based JSON body (`{ url: clipUrl, ... }`) is gone. Do not revert this change.
-  - **Remaining blocker is deeper than originally framed (session 6 finding):** The assumed `skept-ingest` Railway service (`INGEST_WORKER_URL`) was written/committed but never deployed as a running service. R2 has never been populated by anything. The Worker's `callResemble()` path is now structurally correct, but there is no ingest side to feed it. See §3.94 for the Stage 1 build plan that closes this gap.
+  - **Resolved (session 8, 02 Jul 2026).** The assumed `skept-ingest` Railway service never existed and was abandoned as an approach. Instead, Railway's existing `Skept-prototype` service gained a new `POST /api/ingest` endpoint (§3.94) that does the R2 write; `INGEST_WORKER_URL` now points at `https://skept-prototype-production.up.railway.app` instead of the dead `skept-ingest` URL. `callResemble()`'s multipart-from-R2 logic needed no changes — it was already correct, it just had nothing to read until this endpoint existed. First real clip confirmed processed end-to-end 02 Jul 2026.
 - Worker Resemble request body includes `intelligence: true` — required to return the Intelligence/liveness layer used by the §3.91 non-human gate.
 - Single API call per job (`df_sampled.mp4`). No separate audio.wav submission.
 - Audio score embedded in video job response: `item["metrics"]["aggregated_score"]`
@@ -101,7 +101,7 @@ In-memory Python dict. Stateless — jobs lost on restart. Phase 1 must replace 
 - Temp file cleanup runs post-processing on Railway.
 - URL validation (scheme=http/https, non-empty netloc) must occur at `/api/analyse` before yt-dlp dispatch. Returns 400 on failure.
 
-**Target vs current state (session 6):** Target role for Railway is yt-dlp ingestion + R2 upload only (§3.84, locked). Current actual state: Railway still runs the full analysis pipeline (yt-dlp → Resemble → Replicate) directly — no R2 write path exists yet. The split is the §3.94 Stage 1 build; do not treat it as already done.
+**Ingest endpoint (§3.94, built session 8, 02 Jul 2026):** Railway's `Skept-prototype` service now exposes `POST /api/ingest` alongside its pre-existing full-analysis routes (which are untouched — Replicate/faceswap calling location was explicitly out of scope for this build). New endpoint: `{ url, job_id } → download via existing yt-dlp/cookie logic → upload to R2 → { key }`. Auth: `Authorization: Bearer <INGEST_SECRET>` header, fail-closed if unset. Confirmed working via a real Instagram reel download, upload, and Cloudflare Worker read-back. Railway's long-term target role (§3.84) is still ingestion-only — the full-analysis routes staying live alongside the new endpoint is an interim state, not the end state.
 
 **Wikidata subject list:**
 Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double-emit.
@@ -117,9 +117,9 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 ---
 
-## Open checklist items (as of 30 Jun 2026)
+## Open checklist items (as of 02 Jul 2026)
 
-**Current baselines:** Project Brief v0.24 (29 Jun 2026) · Engineers Brief v0.21 (29 Jun 2026)
+**Current baselines:** Project Brief v0.25 (30 Jun 2026) · Engineers Brief v0.22 (30 Jun 2026)
 
 | Item | Description |
 |---|---|
@@ -134,12 +134,13 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | §3.84 | Railway confirmed PERMANENT (30 Jun 2026), target role locked: thin yt-dlp ingestion + R2 upload utility, $5/month, NOT being decommissioned. **NOT YET BUILT** — Railway currently still runs full analysis (yt-dlp + Resemble + Replicate) directly; no R2 write path exists. §3.94 is the concrete build plan. Future option (flagged, not started): Cloudflare Containers (full Docker images via wrangler, with R2/binding access) could eventually eliminate Railway entirely — not scoped, not in progress. |
 | §3.85 | Magic link email rebrand (CREAM/INK/AMBER tokens) — HTML template not yet built; live email still uses Resend's default dark template |
 | §3.88 | Founder + Admin privilege matrix — role column live in D1, specific privileges (admin quota bypass, founder perks) not yet specced or built |
-| §3.89 | verify Worker scoring reconciled to backend (commit cd5df37). Runtime verification still pending — requires a real end-to-end call through a Pro/Max session. Pipeline structurally unblocked by §3.90. |
-| §3.90 | verify pipeline fixes committed (commit 2befcd8 + cc1b337, 30 Jun 2026): D1 CHECK constraints fixed, Resemble URL corrected, permalink_uuid wired, VERDICT_META updated, share link fixed, `callResemble()` rewritten to multipart R2 read + upload (matching `deepfake.py`). **§3.90 is the gating milestone for runtime verification of §3.89, §3.90, and §3.91 — all confirm on the same first real `/api/verify` call.** **Deeper root cause found session 6:** The submission-method question is resolved (multipart, `cc1b337`), but the real blocker is that R2 has never been populated — the assumed `skept-ingest` Railway service was written but never deployed, so `callResemble()` would receive an empty R2 read regardless of submission method. See §3.94 for the Stage 1 build plan. Remaining gate: §3.92 secrets unprovisioned (hard floor). |
-| §3.91 | Liveness gate code-complete (commit 66d6b43, 30 Jun 2026): `intelligence: true` added to Resemble request body; guard now `resembleFrameCount <= 1 \|\| isNotRealPerson`; `non_human_content` propagated through `fusion.js` pillar detail + exclusionReasons. Field path best-effort/unconfirmed — one-shot console.log + TODO in place; runtime confirmation folds into §3.90 first live run. Still pair with §3.20 (Sightengine synthetic gap). |
-| §3.92 | **HARD BLOCKER (found 30 Jun, session 5).** `wrangler secret list` against `skept-verify` returns `[]` — no secrets provisioned. `RESEMBLE_API_KEY` and `INGEST_SECRET` both missing. First live call fails at `callIngest()` (401 from Railway) and `callResemble()` (auth error). This is the floor under §3.89/§3.90/§3.91 runtime verification — nothing can be tested live until both secrets are set via `wrangler secret put` on `skept-verify`. INGEST_SECRET will authenticate the Worker against the new Railway ingest-only endpoint (§3.94 — not yet built; `ingestion-worker.js` was never a running service). RESEMBLE_API_KEY value should be sourced from Railway's existing `RESEMBLE_API_TOKEN` env var — same value, different name. |
-| §3.93 | **Partially resolved (session 6).** `[[r2_buckets]]` binding `CLIP_BUCKET` added to `wrangler-verify.toml` (commit `cc1b337`, placeholder bucket name `skept-clips`). R2 is now enabled on the Cloudflare account (free tier, manually activated session 6) — zero buckets created so far. The bucket name `skept-clips` lives only in `wrangler-verify.toml`; it was previously claimed to be a Railway env var (`R2_BUCKET_NAME`) — confirmed incorrect by direct inspection; that var does not exist. R2 S3 creds (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) remain unprovisioned as Worker secrets — these are only needed for presigned-URL approach, which was superseded by the multipart path (`cc1b337`). The actual R2 bucket still needs to be created in the Cloudflare dashboard before any ingest can write to it (§3.94). |
-| §3.94 | **Stage 1 ingest split — DECIDED, NOT YET BUILT (session 6, 30 Jun 2026).** Root cause confirmed: `skept-ingest` was never a running Railway service — `INGEST_WORKER_URL` (`https://skept-ingest.up.railway.app`) and `ingestion-worker.js` (returning `{ key }`) were written/committed but never deployed. R2 has never been populated by anything. The only pipeline that has ever actually worked is the existing Railway `Skept-prototype` service, which downloads clips via yt-dlp and calls Resemble + Replicate directly. **Stage 1 plan (decided, not built):** Add a new ingest-only endpoint to the existing Railway `Skept-prototype` service (download via existing yt-dlp/cookie logic, upload to R2, return confirmation — no Resemble/Replicate calls in this endpoint). The Cloudflare Worker's `callResemble()` (multipart from R2, `cc1b337`) stays as-is. `RESEMBLE_API_KEY` Worker secret = Railway's `RESEMBLE_API_TOKEN` value (same key, different name). `INSTAGRAM_COOKIES_B64` stays on Railway untouched. Replicate/faceswap calling location is explicitly out of scope. Also required before live calls: create the `skept-clips` R2 bucket in the Cloudflare dashboard; provision §3.92 secrets. Cloudflare Containers (future option, not scoped) could eventually eliminate Railway entirely. |
+| §3.89 | **CLOSED 02 Jul 2026.** Runtime-verified via a real `/api/verify` call — audio passthrough, certainty scalar, 5s segments, and tier quotas all confirmed correct against a live Resemble response, independently checked via direct D1 query. |
+| §3.90 | **CLOSED 02 Jul 2026 — the gating milestone.** First clip ever processed end-to-end through the Cloudflare-native pipeline: real Instagram reel → Railway ingest → R2 → Worker read → Resemble → verdict persisted to `analysis_history` with valid `verdict_state`/`run_depth`. Confirmed via direct D1 query, not just the API response. |
+| §3.91 | **Code deployed and confirmed live, exclusion path still unexercised.** The 02 Jul live run didn't misfire (normal clip, correctly unexcluded) but never triggered the `isNotRealPerson` branch either — the liveness field path is still unconfirmed for an actual synthetic/non-human clip. Re-run the cartoon-cat reference clip specifically to close this. Still pair with §3.20 (Sightengine synthetic gap). |
+| §3.92 | **CLOSED 02 Jul 2026.** Both `RESEMBLE_API_KEY` and `INGEST_SECRET` provisioned on `skept-verify` via `wrangler secret put`, run in a plain terminal outside any AI session. Confirmed functional via a successful live call. |
+| §3.93 | **CLOSED 02 Jul 2026.** `skept-clips` bucket created via Cloudflare MCP. `CLIP_BUCKET` binding confirmed working — Worker successfully read an uploaded object during the first live run. R2 S3 credentials (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`) provisioned as Railway env vars — needed after all, since Railway isn't a Workers runtime and has no native R2 binding; the ingest endpoint (§3.94) uses boto3 against R2's S3-compatible API. |
+| §3.94 | **CLOSED 02 Jul 2026 — Stage 1 built, deployed, and confirmed working.** New `POST /api/ingest` endpoint added to Railway's `Skept-prototype` service (download via existing yt-dlp logic, upload to R2, `INGEST_SECRET` bearer auth). `callResemble()` needed no changes — already correct, just had nothing to read until now. `callIngest()` on the Worker side also needed no changes — its existing contract matched the new endpoint's shape exactly. Only Worker-side fix needed: `INGEST_WORKER_URL` updated from the dead `skept-ingest` URL to the real Railway prototype URL. |
+| §3.95 | **NEW, CLOSED 02 Jul 2026.** First real `/api/verify` call returned a bare `405 Method Not Allowed` — the route pattern `skept.co/api/verify/*` (trailing wildcard) didn't match the Worker's own internal exact-path check (`url.pathname !== "/api/verify"`), so requests fell through to Cloudflare's static-asset handling instead of reaching the Worker. This affected every real user submission through the live product, not just this session's tests. Fixed by removing the wildcard — route is now `skept.co/api/verify`, exact match only. |
 
 ---
 
@@ -147,8 +148,10 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 
 | Variable | Purpose |
 |---|---|
-| `RESEMBLE_API_KEY` | Resemble AI DETECT-3B Omni (Worker secret — value sourced from Railway's `RESEMBLE_API_TOKEN` env var, same value, different name) |
-| `INGEST_SECRET` | Shared secret authenticating the Cloudflare Worker against Railway's ingest-only endpoint (§3.94 — not yet built) |
+| `RESEMBLE_API_KEY` | Resemble AI DETECT-3B Omni (Worker secret on `skept-verify` — value sourced from Railway's `RESEMBLE_API_TOKEN` env var, same value, different name). Provisioned and confirmed working 02 Jul 2026. |
+| `INGEST_SECRET` | Shared secret authenticating the Cloudflare Worker against Railway's `/api/ingest` endpoint (§3.94). Set as a Worker secret on `skept-verify` AND a Railway env var on `Skept-prototype` — must match on both sides. Provisioned and confirmed working 02 Jul 2026. |
+| `R2_ACCOUNT_ID` | Railway env var (on `Skept-prototype`) — Cloudflare account ID, used to construct the R2 S3-compatible endpoint URL for the ingest endpoint's boto3 client. |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Railway env vars (on `Skept-prototype`) — R2 API token credentials (Object Read & Write, scoped to `skept-clips`), used by the ingest endpoint to upload via boto3. Not needed Worker-side — the Worker uses a native R2 binding (`CLIP_BUCKET`) instead. |
 | `RAILWAY_*` | Set by Railway automatically |
 
 ---
@@ -156,7 +159,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 ## Deploy
 
 **Cloudflare Pages (production):** Push to `main` → auto-deploy. No manual deploy needed for frontend changes.
-**Railway:** Confirmed permanent (30 Jun 2026, §3.84), $5/month Hobby plan, NOT being decommissioned. **Target role (locked, not yet built):** thin yt-dlp ingestion + R2 upload endpoint only. **Current actual state:** still runs the full analysis pipeline (yt-dlp + Resemble + Replicate) directly — the ingest split is the §3.94 Stage 1 build. Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
+**Railway:** Confirmed permanent (30 Jun 2026, §3.84), $5/month Hobby plan, NOT being decommissioned. **Target role:** thin yt-dlp ingestion + R2 upload endpoint only. **Current actual state (02 Jul 2026):** the `POST /api/ingest` endpoint now exists and is confirmed working (§3.94) alongside the pre-existing full-analysis routes, which remain live and untouched. The ingestion-only end state is not yet reached — that's a separate future step (§3.84), not started. Push to `main` → auto-deploy. Monitor via Railway dashboard logs.
 **Production stack:** Cloudflare Pages + Workers + D1 + R2 + KV — LIVE (see Current build state below). Railway remains permanently alongside it as the yt-dlp utility pipe; it is not a migration target.
 
 ---
@@ -169,7 +172,7 @@ Lazy-loaded on first job, not at startup. Prevents cold-start timeout and double
 | History page (`history.html`) | LIVE at skept.co/history — cream shell, quota strip, filter chips, card list, delete flow |
 | History Worker | LIVE at skept.co/api/history/* |
 | Billing Workers (Stripe + RevenueCat) | LIVE — `skept-stripe-checkout`, `skept-stripe-webhook`, `skept-revenuecat-webhook` |
-| Verify Worker | LIVE at skept.co/api/verify/* — scoring reconciled to backend (§3.89); D1 CHECK constraints fixed, permalink_uuid wired, Resemble URL corrected (§3.90); `callResemble()` rewritten to multipart R2 read (commit `cc1b337`, session 6); §3.91 liveness gate (`non_human_content`) deployed (commit 66d6b43). §3.89 + §3.90 + §3.91 all share a single runtime blocker. **Session 6 pre-flight state:** §3.92 Worker secrets unprovisioned (hard floor — both `RESEMBLE_API_KEY` and `INGEST_SECRET` missing); R2 enabled on account but zero buckets created and `skept-clips` bucket not yet provisioned; no ingest side exists to populate R2 (§3.94 not yet built). Nothing can go live until §3.92 secrets are set AND §3.94 Stage 1 endpoint is built and deployed. |
+| Verify Worker | LIVE and confirmed working end-to-end at **skept.co/api/verify** (route corrected 02 Jul 2026, §3.95 — no longer a wildcard, was previously misconfigured as `/api/verify/*` which caused every real call to 405). Scoring reconciled to backend (§3.89, runtime-verified); D1 CHECK constraints fixed, permalink_uuid wired, Resemble URL corrected (§3.90, closed); `callResemble()` reads from R2 via multipart (commit `cc1b337`); §3.91 liveness gate (`non_human_content`) deployed and confirmed not to misfire, exclusion branch itself still unexercised. First real clip processed end-to-end 02 Jul 2026 — verdict persisted and independently confirmed via D1 query. |
 | Settings Worker | LIVE at skept.co/api/settings/* |
 | verify.html | LIVE — intake, analysing, and verdict views wired to /api/verify/* |
 | settings.html | Scaffold only — not yet built |
@@ -199,7 +202,7 @@ Auto-deploys on push to main — no manual deploy needed for frontend changes.
 - skept-stripe-checkout → skept.co/api/billing/*
 - skept-stripe-webhook → skept.co/api/webhooks/stripe
 - skept-revenuecat-webhook → skept.co/api/webhooks/revenuecat
-- skept-verify → skept.co/api/verify/*
+- skept-verify → skept.co/api/verify (exact path only — no trailing wildcard, fixed §3.95, 02 Jul 2026; a wildcard here previously caused every real call to fall through to static-asset handling and 405)
 - skept-history → skept.co/api/history/*
 - skept-verdict → skept.co/v/* → cloudflare/verdict-worker.js → wrangler-verdict.toml (route registered manually in Cloudflare dashboard)
 - skept-admin → skept.co/admin* (frontend page) + skept.co/api/admin/* (Worker API) — ADMIN_TOKEN secret, sessionStorage token-gate, NOT tier-gated, NOT yet tied to role='admin'
@@ -439,3 +442,4 @@ npx wrangler@latest d1 migrations apply skept-auth --remote
 - `score=None` excludes from fusion. Never substitute 0.5 for None.
 - Absence of signal is not evidence of authenticity.
 - Read CLAUDE.md before every session. Do not rely on session memory for architecture facts.
+- Never handle secret values directly — `wrangler secret put` is interactive and must be run by the human in a plain terminal, not through Claude Code.
