@@ -26,7 +26,7 @@ bucket_name = "skept-clips"
 INGEST_WORKER_URL = "https://skept-prototype-production.up.railway.app"
 
 [[routes]]
-pattern = "skept.co/api/verify/*"
+pattern = "skept.co/api/verify"
 zone_name = "skept.co"
 
 # Secrets — set via `wrangler secret put --config cloudflare/wrangler-verify.toml`, do NOT commit:
